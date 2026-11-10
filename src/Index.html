@@ -585,6 +585,47 @@ function vInformes(){
    <div class="cols">${ev.map(e=>`<div class="c" title="${perLabel(e.m)}: ingresos ${fmt(e.i,'UYU')}, gastos ${fmt(e.g,'UYU')}" onclick="V.inf.per='${e.m}';render()"><div class="pair"><i style="height:${(e.i/emx*100).toFixed(1)}%;background:var(--verde)"></i><i style="height:${(e.g/emx*100).toFixed(1)}%;background:var(--rojo)"></i></div><span>${MES3[+e.m.slice(5)-1]}</span></div>`).join('')}</div>
    <div class="legend"><span><i style="background:var(--verde)"></i>Ingresos</span><span><i style="background:var(--rojo)"></i>Gastos</span></div>
    <div style="margin-top:10px">${ev.slice().reverse().map(e=>`<div class="kv sm"><span>${perLabel(e.m)}</span><span class="num"><span class="pos">${fmt(e.i,'UYU')}</span> · <span class="neg">${fmt(e.g,'UYU')}</span> · <b class="${e.i-e.g<0?'neg':'pos'}">${fmtS(e.i-e.g,'UYU')}</b></span></div>`).join('')}</div>
+  </div>
+  ${vPromedios()}`;
+}
+
+/* ---------- Promedios mensuales del año ---------- */
+function vPromedios(){
+  const A=V.prom||(V.prom={y:hoy().slice(0,4),actual:false,abiertas:{}});
+  const hoyYM=ym(hoy()),y=A.y,esActual=y===hoyYM.slice(0,4);
+  // meses que se promedian: año pasado → 12; año en curso → meses completos (o hasta el actual)
+  const ult=esActual?(A.actual?+hoyYM.slice(5,7):+hoyYM.slice(5,7)-1):12;
+  const n=Math.max(ult,0);
+  const hasta=y+'-'+p2(Math.max(n,1));
+  const list=S.movs.filter(x=>x.f.startsWith(y)&&x.f.slice(0,7)<=hasta&&(x.t==='G'||x.t==='I'));
+  const ing={},gas={};let TI=0,TG=0;
+  for(const x of list){const v=toUYU(x.m,monOf(x.c));
+    if(x.t==='I'){ing[x.k]=(ing[x.k]||0)+v;TI+=v}
+    else{const cat=catOf(x);(gas[cat]||(gas[cat]={t:0,k:{}})).t+=v;gas[cat].k[x.k]=(gas[cat].k[x.k]||0)+v;TG+=v}}
+  const pm=v=>n?v/n:0;
+  const filasG=Object.entries(gas).sort((a,b)=>b[1].t-a[1].t).map(([cat,o])=>{
+    const ab=A.abiertas[cat];
+    return `<tr class="cat1" onclick="V.prom.abiertas[${js(cat)}]=!V.prom.abiertas[${js(cat)}];render()"><td>${ab?'▾':'▸'} ${h(cat)}</td><td class="num"><b>${fmt0(pm(o.t))}</b></td><td class="num disp">${fmt0(o.t)}</td><td class="num">${TG?Math.round(o.t/TG*100):0}%</td></tr>`+
+      (ab?Object.entries(o.k).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr class="sub" onclick="filtrar({k:${js('G|'+k)}},'${y}')"><td>${h(k)}</td><td class="num">${fmt0(pm(v))}</td><td class="num disp">${fmt0(v)}</td><td class="num mu">${TG?Math.round(v/TG*100):0}%</td></tr>`).join(''):'');
+  }).join('');
+  const filasI=Object.entries(ing).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr class="sub" onclick="filtrar({k:${js('I|'+k)}},'${y}')"><td>${h(k)}</td><td class="num">${fmt0(pm(v))}</td><td class="num disp">${fmt0(v)}</td><td class="num mu">${TI?Math.round(v/TI*100):0}%</td></tr>`).join('');
+  const exc=pm(TI-TG);
+  return `<div class="card"><h2>Promedios mensuales</h2>
+   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <div class="pnav"><button onclick="V.prom.y=String(+V.prom.y-1);render()">‹</button><b>Año ${h(y)}</b><button onclick="V.prom.y=String(+V.prom.y+1);render()">›</button></div>
+    ${esActual?`<div class="seg"><button class="${!A.actual?'on':''}" onclick="V.prom.actual=false;render()">Meses completos</button><button class="${A.actual?'on':''}" onclick="V.prom.actual=true;render()">Con el mes actual</button></div>`:''}
+   </div>
+   <div class="xs mu" style="margin:8px 0">${n?`Promedio sobre <b>${n} ${n===1?'mes':'meses'}</b> (enero a ${MESES[n-1]} ${h(y)}).`:'Todavía no hay meses completos este año: elegí “Con el mes actual”.'} Tocá una categoría para ver sus conceptos.</div>
+   ${n&&list.length?`<div class="resumen"><div><div class="xs mu">Ingresos por mes</div><b class="num pos">${fmt0(pm(TI))}</b></div><div><div class="xs mu">Gastos por mes</div><b class="num neg">${fmt0(pm(TG))}</b></div>
+     <div><div class="xs mu">Excedente por mes</div><b class="num ${exc<0?'neg':'pos'}" style="font-size:20px">${fmt0(exc)}</b></div><div><div class="xs mu">Excedente del período</div><b class="num ${TI-TG<0?'neg':''}">${fmt0(TI-TG)}</b></div></div>
+   <table class="pr"><tr><th>Ingresos</th><th>Por mes</th><th class="disp">Total</th><th>%</th></tr>
+    ${filasI||'<tr><td colspan="4" class="mu">Sin ingresos</td></tr>'}
+    <tr class="cat"><td>Total ingresos</td><td class="num">${fmt0(pm(TI))}</td><td class="num disp">${fmt0(TI)}</td><td></td></tr></table>
+   <table class="pr" style="margin-top:14px"><tr><th>Gastos por categoría</th><th>Por mes</th><th class="disp">Total</th><th>%</th></tr>
+    ${filasG||'<tr><td colspan="4" class="mu">Sin gastos</td></tr>'}
+    <tr class="cat"><td>Total gastos</td><td class="num">${fmt0(pm(TG))}</td><td class="num disp">${fmt0(TG)}</td><td></td></tr></table>`
+   :'<div class="empty">Sin datos para ese año.</div>'}
+   <div class="xs mu" style="margin-top:8px">En pesos; dólares a $ ${NF.format(cot())}. No incluye transferencias entre cuentas ni ajustes de saldo.</div>
   </div>`;
 }
 
