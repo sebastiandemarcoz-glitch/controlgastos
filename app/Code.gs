@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.0.1';
+const VERSION_APP = '5.1.0';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -21,6 +21,7 @@ const HDR = {
   Config: ['Clave', 'Valor'],
   Notificaciones: ['ID', 'Recibida', 'App', 'Título', 'Texto', 'Estado', 'Importe', 'Moneda', 'Comercio', 'Cuenta', 'Concepto', 'Movimiento', 'Tipo', 'Cuotas'],
   Reglas: ['Tipo', 'Palabra', 'Valor', 'App'],
+  PresupuestoAnual: ['ID', 'Nombre', 'Concepto', 'Mes', 'Año', 'Importe'],
   Fijos: ['ID', 'Nombre', 'Tipo', 'Cuenta', 'Concepto', 'Importe', 'Día', 'Desde', 'Hasta', 'Activo', 'Último mes'],
   Conciliacion: ['ID', 'Estado de cuenta', 'Cuenta', 'Diferencia', 'Fecha', 'Descripción', 'Importe', 'Moneda', 'Movimiento', 'Importe app', 'Cuota', 'Estado', 'Creado']
 };
@@ -548,7 +549,7 @@ function getData() {
   const nuevosFijos = generarFijos_();
   nuevosFijos.forEach(function (x) { movs.push(x); });
   return JSON.stringify({ cfg: cfg, movs: movs, sheet: book_().getUrl(), notifs: notifs_(), reglas: leerReglas_(), token: token_(),
-    fijos: leerFijos_(), difs: leerDifs_(), app: infoVersion_(), url: ScriptApp.getService().getUrl() });
+    fijos: leerFijos_(), difs: leerDifs_(), extras: leerExtras_(), app: infoVersion_(), url: ScriptApp.getService().getUrl() });
 }
 function infoVersion_() {
   const rem = versionRemota_();
@@ -600,6 +601,9 @@ function saveCfg(json) {
         if (rk[t + '|' + r[4]] != null) r[4] = rk[t + '|' + r[4]];
       });
       writeBody_('Fijos', fj);
+      const ex = body_('PresupuestoAnual');
+      ex.forEach(function (r) { if (rk['G|' + r[2]] != null) r[2] = rk['G|' + r[2]]; });
+      writeBody_('PresupuestoAnual', ex);
     }
     return 'ok';
   });
@@ -795,6 +799,21 @@ function estadoDif(id, estado) {
     if (n < 2) return 'ok';
     const ids = s.getRange(2, 1, n - 1, 1).getValues();
     for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === id) { s.getRange(i + 2, 12).setValue(estado); break; }
+    return 'ok';
+  });
+}
+
+/* ---------- gastos anuales previstos (presupuesto puntual por mes) ---------- */
+function leerExtras_() {
+  return body_('PresupuestoAnual').filter(function (r) { return String(r[0]) && String(r[2]); }).map(function (r) {
+    return { id: String(r[0]), n: String(r[1]), k: String(r[2]), mes: Number(r[3]) || 1, anio: Number(r[4]) || 0, m: num_(r[5]) };
+  });
+}
+function saveExtras(json) {
+  dueno_();
+  const list = JSON.parse(json);
+  return withLock_(function () {
+    writeBody_('PresupuestoAnual', list.map(function (x) { return [x.id, x.n, x.k, x.mes, x.anio || '', x.m]; }));
     return 'ok';
   });
 }

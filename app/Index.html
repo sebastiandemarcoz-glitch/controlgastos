@@ -244,7 +244,7 @@ async function load(){
   try{
     const o=JSON.parse(await call('getData'));
     if(pend)return;
-    S.cfg=o.cfg;S.movs=o.movs;S.sheet=o.sheet||'';S.notifs=o.notifs||{pend:[],rec:[],cuotas:[]};S.notifs.cuotas=S.notifs.cuotas||[];S.reglas=o.reglas||[];S.token=o.token||'';S.fijos=o.fijos||[];S.difs=o.difs||[];S.app=o.app||{};S.url=o.url||'';S.ready=true;S.err=null;invalidate();render();
+    S.cfg=o.cfg;S.movs=o.movs;S.sheet=o.sheet||'';S.notifs=o.notifs||{pend:[],rec:[],cuotas:[]};S.notifs.cuotas=S.notifs.cuotas||[];S.reglas=o.reglas||[];S.token=o.token||'';S.fijos=o.fijos||[];S.difs=o.difs||[];S.extras=o.extras||[];S.app=o.app||{};S.url=o.url||'';S.ready=true;S.err=null;invalidate();render();
   }catch(e){S.err=(e&&e.message)||String(e);render()}
 }
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.ready&&document.getElementById('modal').hidden)load()});
@@ -599,7 +599,7 @@ function saveConcepto(){
   if(!mv&&n!==old&&con(tipo,n)){toast('Ya existe ese concepto');return}
   if(old){
     const to=mv||n;
-    if(to!==old){ren.k={[tipo+'|'+old]:to};for(const x of S.movs)if(x.t===tipo&&x.k===old)x.k=to}
+    if(to!==old){ren.k={[tipo+'|'+old]:to};for(const x of S.movs)if(x.t===tipo&&x.k===old)x.k=to;if(tipo==='G')(S.extras||[]).forEach(e=>{if(e.k===old)e.k=to})}
     if(mv)S.cfg.conceptos=S.cfg.conceptos.filter(c=>!(c.tipo===tipo&&c.n===old));
     else Object.assign(con(tipo,old),{n,cat});
   }else S.cfg.conceptos.push({n,tipo,cat});
@@ -706,10 +706,14 @@ function barra(gas,pres){
   return `<div class="gb sem-${sem(p)}${p>=100?' full':''}" style="width:${Math.min(100,p).toFixed(1)}%"></div>`;
 }
 function pctTxt(gas,pres){if(!pres)return '';const p=gas/pres*100;return `<span class="tx-${sem(p)}">${Math.round(p)}%</span>`}
+function extrasMes(k,ymx){const y=+ymx.slice(0,4),m=+ymx.slice(5,7);return (S.extras||[]).filter(x=>x.k===k&&x.mes===m&&(!x.anio||x.anio===y))}
+function presMes(c,ymx){return (c.pres||0)+extrasMes(c.n,ymx).reduce((s,x)=>s+x.m,0)}
+function presPeriodo(c,P){const y=P.per.slice(0,4),n=P.modo==='mes'?null:P.modo==='corriente'?+P.per.slice(5,7):12;
+  if(!n)return presMes(c,P.per);let t=0;for(let i=1;i<=n;i++)t+=presMes(c,y+'-'+p2(i));return t}
 function gastosConcepto(filtro){const r={};for(const x of S.movs)if(x.t==='G'&&filtro(x)){r[x.k]=(r[x.k]||0)+toUYU(x.m,monOf(x.c))}return r}
 function presResumen(mes){
   const g=gastosConcepto(x=>x.f.startsWith(mes));let pres=0,gas=0;
-  for(const c of S.cfg.conceptos)if(c.tipo==='G'&&c.pres>0){pres+=c.pres;gas+=g[c.n]||0}
+  for(const c of S.cfg.conceptos){if(c.tipo!=='G')continue;const p=presMes(c,mes);if(p>0){pres+=p;gas+=g[c.n]||0}}
   return {pres,gas};
 }
 function vPresupuesto(){
@@ -720,15 +724,15 @@ function vPresupuesto(){
   const gas=gastosConcepto(fil);
   const cats={};
   for(const c of S.cfg.conceptos.filter(c=>c.tipo==='G')){
-    const g=gas[c.n]||0;if(!P.edit&&!c.pres&&!g)continue;
-    (cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push({c,g,p:(c.pres||0)*fac});
+    const g=gas[c.n]||0,pp=presPeriodo(c,P);if(!P.edit&&!pp&&!g)continue;
+    (cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push({c,g,p:pp,ex:P.modo==='mes'?extrasMes(c.n,P.per):[]});
   }
   let TP=0,TG=0,html='';
   for(const cat of Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es'))){
     const L=cats[cat].sort((a,b)=>a.c.n.localeCompare(b.c.n,'es'));
     const cp=L.reduce((s,r)=>s+r.p,0),cgB=L.reduce((s,r)=>s+(r.p?r.g:0),0),cg=cp?cgB:L.reduce((s,r)=>s+r.g,0);TP+=cp;TG+=cgB;
     html+=`<tr class="cat"><td>${h(cat)}</td><td>${cp?fmt(cp,'UYU'):''}</td><td class="gc">${P.edit?'':celda(cg,cp)}</td><td class="disp">${cp?dispTxt(cp-cg):''}</td></tr>`;
-    for(const r of L)html+=`<tr><td style="padding-left:14px">${h(r.c.n)}</td>
+    for(const r of L)html+=`<tr><td style="padding-left:14px">${h(r.c.n)}${r.ex.length&&!P.edit?`<div class="xs mu">incluye ${r.ex.map(x=>h(x.n)+' '+fmt(x.m,'UYU')).join(', ')}</div>`:''}</td>
       <td>${P.edit?`<input type="text" inputmode="decimal" data-con="${h(r.c.n)}" value="${r.c.pres?String(r.c.pres).replace('.',','):''}" placeholder="0">`:(r.p?fmt(r.p,'UYU'):'<span class="mu xs">sin presupuesto</span>')}</td>
       <td class="gc">${P.edit?'':`<div style="cursor:pointer" onclick="filtrar({k:${js('G|'+r.c.n)}},'${P.modo==='mes'?P.per:y}')">${celda(r.g,r.p)}</div>`}</td><td class="disp">${r.p&&!P.edit?dispTxt(r.p-r.g):''}</td></tr>`;
   }
@@ -738,7 +742,7 @@ function vPresupuesto(){
     ${pnav('V.pres.per',P.per)}
     <div class="seg">${[['mes','Mes'],['corriente','Al corriente'],['anio','Año']].map(([k,l])=>`<button class="${P.modo===k?'on':''}" onclick="V.pres.modo='${k}';render()">${l}</button>`).join('')}</div>
    </div>
-   <div class="xs mu" style="margin-top:8px">${P.modo==='mes'?'Gastos del mes contra el presupuesto mensual.':P.modo==='corriente'?`De enero a ${MESES[mesN-1]}: presupuesto mensual × ${mesN}.`:`Todo ${y}: presupuesto mensual × 12.`}
+   <div class="xs mu" style="margin-top:8px">${P.modo==='mes'?'Gastos del mes contra el presupuesto del mes (mensual + gastos anuales que caen este mes).':P.modo==='corriente'?`De enero a ${MESES[mesN-1]}: suma del presupuesto de cada mes, con los gastos anuales previstos.`:`Todo ${y}: presupuesto de los 12 meses, con los gastos anuales previstos.`}
     Barra: <b class="tx-v">verde</b> hasta 75% · <b class="tx-a">amarilla</b> 76–100% · <b class="tx-r">roja</b> más de 100%.</div>
   </div>
   <div class="card">
@@ -751,8 +755,45 @@ function vPresupuesto(){
    ${P.edit?`<div class="btns" style="justify-content:flex-end;margin-top:10px"><button class="btn" onclick="V.pres.edit=false;render()">Cancelar</button><button class="btn pri" onclick="guardarPres()">Guardar presupuestos</button></div>`:''}
    ${!P.edit&&TP&&TG<Object.values(gas).reduce((a,b)=>a+b,0)-0.5?`<div class="xs mu" style="margin-top:6px">Las categorías y el total comparan solo los conceptos que tienen presupuesto. Gasto total del período (con todo): <b class="num">${fmt(Object.values(gas).reduce((a,b)=>a+b,0),'UYU')}</b>.</div>`:''}
    <div class="xs mu" style="margin-top:6px">Montos en pesos; dólares convertidos a $ ${NF.format(cot())}. Tocá un concepto para ver sus movimientos.</div>
+  </div>
+  ${vExtras(P)}`;
+}
+function vExtras(P){
+  const L=[...(S.extras||[])].sort((a,b)=>a.mes-b.mes||a.n.localeCompare(b.n,'es'));
+  const y=+P.per.slice(0,4);
+  const tot=L.filter(x=>!x.anio||x.anio===y).reduce((s,x)=>s+x.m,0);
+  return `<div class="card"><h2>Gastos anuales previstos <button class="btn sm" onclick="openExtra()">+ Agregar</button></h2>
+   <p class="xs mu" style="margin-top:0">Gastos grandes que caen una vez al año en un mes fijo (patente, contribución, escolaridad…). Ese mes se suman al presupuesto de su concepto.</p>
+   ${L.length?L.map(x=>`<div class="row" onclick="openExtra(${js(x.id)})"><div class="ico G" style="font-size:11px">${MES3[x.mes-1]}</div><div class="mid"><div class="t1">${h(x.n)}</div>
+     <div class="t2">${h(x.k)} · ${x.anio?'solo '+x.anio:'todos los años'} · ${MESES[x.mes-1]}</div></div><div class="num">${fmt(x.m,'UYU')}</div></div>`).join('')
+     +`<div class="kv" style="margin-top:6px"><b>Total previsto ${y}</b><b class="num">${fmt(tot,'UYU')}</b></div>`:'<div class="empty">Todavía no cargaste ninguno.</div>'}
   </div>`;
 }
+function openExtra(id){
+  const x=id?S.extras.find(e=>e.id===id):{n:'',k:'',mes:+hoy().slice(5,7),anio:0,m:''};
+  const conc=sortN(S.cfg.conceptos.filter(c=>c.tipo==='G'));
+  modal(`<h3>${id?'Editar':'Nuevo'} gasto anual previsto</h3><form onsubmit="event.preventDefault();guardarExtra(${js(id||'')})">
+   <div class="fld"><label>Nombre</label><input type="text" id="ex_n" value="${h(x.n)}" placeholder="Ej. Patente del auto, Contribución, Escolaridad" required></div>
+   <div class="fld2"><div class="fld"><label>Mes</label><select id="ex_mes">${MESES.map((m,i)=>`<option value="${i+1}"${i+1===x.mes?' selected':''}>${m}</option>`).join('')}</select></div>
+   <div class="fld"><label>Monto ($)</label><input type="text" inputmode="decimal" id="ex_m" value="${x.m?String(x.m).replace('.',','):''}" required></div></div>
+   <div class="fld"><label>Concepto donde se va a gastar</label><input type="text" id="ex_k" list="dl_exk" value="${h(x.k)}" placeholder="Elegí o escribí uno nuevo" autocomplete="off" required>
+    <datalist id="dl_exk">${conc.map(c=>`<option value="${h(c.n)}">`).join('')}</datalist>
+    <div class="xs mu" style="margin-top:3px">Si escribís un concepto que no existe (ej. “Escolaridad”), se crea en la categoría “Gastos anuales”.</div></div>
+   <div class="fld"><label>Se repite</label><select id="ex_a"><option value="0"${!x.anio?' selected':''}>Todos los años</option>${[0,1,2].map(d=>{const a=+hoy().slice(0,4)+d;return `<option value="${a}"${x.anio===a?' selected':''}>Solo en ${a}</option>`}).join('')}</select></div>
+   <div class="btns" style="justify-content:space-between"><div>${id?`<button type="button" class="btn dan" onclick="borrarExtra(${js(id)})">Eliminar</button>`:''}</div>
+   <div class="btns"><button type="button" class="btn" onclick="closeModal()">Cancelar</button><button class="btn pri">Guardar</button></div></div></form>`);
+  setTimeout(()=>document.getElementById('ex_n').focus(),50);
+}
+function guardarExtra(id){
+  const g=i=>document.getElementById(i).value;
+  const x={id:id||uid(),n:g('ex_n').trim(),k:g('ex_k').trim(),mes:+g('ex_mes'),anio:+g('ex_a')||0,m:r2(Math.abs(parseNum(g('ex_m'))))};
+  if(!x.n||!x.k||!(x.m>0)){toast('Completá nombre, concepto y monto');return}
+  const ex=S.cfg.conceptos.find(c=>c.tipo==='G'&&norm(c.n)===norm(x.k));
+  if(ex)x.k=ex.n;else{S.cfg.conceptos.push({n:x.k,tipo:'G',cat:'Gastos anuales'});invalidate();saveCfg()}
+  S.extras=(S.extras||[]).filter(e=>e.id!==x.id);S.extras.push(x);
+  op('saveExtras',JSON.stringify(S.extras)).catch(()=>{});closeModal();render();toast('Guardado');
+}
+function borrarExtra(id){confirmar('¿Eliminar este gasto anual previsto?',()=>{S.extras=S.extras.filter(e=>e.id!==id);op('saveExtras',JSON.stringify(S.extras)).catch(()=>{});closeModal();render()})}
 function celda(g,p){return `<div class="gcell">${barra(g,p)}<span class="num">${fmt(g,'UYU')}</span>${p?`<small>${pctTxt(g,p)}</small>`:''}</div>`}
 function dispTxt(v){return `<span class="num ${v<0?'neg':''}">${fmtS(v,'UYU')}</span>`}
 function guardarPres(){
