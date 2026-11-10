@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.5.5';
+const VERSION_APP = '5.5.6';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -275,8 +275,8 @@ function parseNotif_(app, titulo, texto) {
   const n = normTxt_(full);
   const p = { app: app || '', texto: full, importe: 0, mon: 'UYU', comercio: '', tipo: 'G', digitos: '', esMov: false, rechazo: false };
   if (/rechazad|denegad|no aprobad|no fue aprobad|codigo de (verificacion|seguridad)|tu clave|token|inicio de sesion|iniciaste sesion/.test(n)) { p.rechazo = true; return p; }
-  let m = /(u\$s|us\$|usd|u\$d|uyu|\$u|\$)\s*([0-9][0-9.,]*)/i.exec(full);
-  if (m) { p.importe = num_(m[2]); p.mon = /^(u\$s|us\$|usd|u\$d)$/i.test(m[1]) ? 'USD' : 'UYU'; }
+  let m = /(u\$s|us\$|usd|u\$d|uyu|\$u|\$|\bpes\b|\bdol\b)\s*([0-9][0-9.,]*)/i.exec(full);
+  if (m) { p.importe = num_(m[2]); p.mon = /^(u\$s|us\$|usd|u\$d|dol)$/i.test(m[1]) ? 'USD' : 'UYU'; }
   else {
     m = /([0-9][0-9.,]*)\s*(pesos|d[oó]lares|uyu|usd)/i.exec(full);
     if (m) { p.importe = num_(m[1]); p.mon = /d[oó]lar|usd/i.test(m[2]) ? 'USD' : 'UYU'; }
@@ -291,8 +291,9 @@ function parseNotif_(app, titulo, texto) {
   p.esMov = p.importe > 0;
   if (/acredit|recibiste|te transfiri|transferencia recibida|deposito|reintegro|devolucion|cobraste/.test(n)) p.tipo = 'I';
   if (/pago (de |a )?(tu |la )?tarjeta|pago tarjeta|pagaste tu tarjeta|transferencia (enviada|realizada)|transferiste/.test(n)) p.tipo = 'T';
-  const cm = full.match(/comercio:?\s*([^.,;]+)/i);
-  if (cm) p.comercio = cm[1].trim();
+  // "Comercio: 033GRANJA TRES ARROYOS VIS3 Tipo: Compra": se corta en la etiqueta siguiente y se saca el código numérico de adelante
+  const cm = full.match(/comercio:?\s*(.+?)(?=\s+[A-Za-zÁÉÍÓÚáéíóúñ]+\s*:|[.,;](?:\s|$)|$)/i);
+  if (cm) p.comercio = cm[1].trim().replace(/^\d+\s*(?=[A-Za-z])/, '');
   else {
     const re = /\ben\s+(.+?)(?=\s+(?:con|por|en|el dia|el d[ií]a|el\s+\d+|a las|desde|usando|mediante|fue|ha sido|hoy|aprobad[ao]|autorizad[ao]|realizad[ao]|exitosa)\b|[,;]|\.\s|\.$|$)/gi;
     let x;
@@ -309,7 +310,7 @@ function parseNotif_(app, titulo, texto) {
     const cx = resto.match(/^\s*[,.]?\s*([A-Za-z][A-Za-z0-9*.&'\/ -]{2,40}?)(?=\s+(?:tarjeta|con|el|en|por|fecha|hora|aprobad[ao])\b|[.,;]|$)/i);
     if (cx && !/^(en|con|por|pesos|d[oó]lares)$/i.test(cx[1].trim()) && !/^(el|la|del|de)\s+\d/i.test(cx[1].trim())) p.comercio = cx[1].trim();
   }
-  const dg = full.match(/(?:terminad[ao] en|finalizad[ao] en|final|\*+|x{3,4})\s*(\d{4})\b/i);
+  const dg = full.match(/(?:terminad[ao] en|finalizad[ao] en|final|tarjeta\s*(?:n[°ºo.]*)?:|\*+|x{3,4})\s*(\d{4})\b/i);
   if (dg) p.digitos = dg[1];
   return p;
 }
@@ -362,8 +363,8 @@ function heuristica_(p, cfg) {
   let c = cfg.cuentas.filter(function (a) { return !a.arch && a.mon === p.mon && palabras_(a.n).indexOf(' ' + banco + ' ') > -1; });
   if (c.length > 1) {
     const n = normTxt_(p.texto);
-    if (/debito|caja de ahorro|cuenta corriente/.test(n)) c = c.filter(function (a) { return /^ca\b|caja/i.test(normTxt_(a.n)); });
-    else if (/credito|visa|master|recompensa|tarjeta/.test(n)) c = c.filter(function (a) { return /^tc\b|tarjeta/i.test(normTxt_(a.n)); });
+    if (/debito|caja de ahorro|cuenta corriente|\btdd\b/.test(n)) c = c.filter(function (a) { return /^ca\b|caja/i.test(normTxt_(a.n)); });
+    else if (/credito|visa|master|recompensa|\btdc\b|tarjeta/.test(n)) c = c.filter(function (a) { return /^tc\b|tarjeta/i.test(normTxt_(a.n)); });
   }
   return c.length === 1 ? c[0].n : '';
 }

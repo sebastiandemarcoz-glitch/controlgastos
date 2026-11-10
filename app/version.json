@@ -1,1 +1,1 @@
-{"version": "5.5.5", "notas": "Avisos: se reconocen importes sin signo de moneda (ej. \"por 1.234,50\") y los avisos del celular sin importe quedan por clasificar en vez de descartarse."}
+{"version": "5.5.6", "notas": "Avisos de BBVA (\"Importe: PES 3147.55 Comercio: ... Tipo: Compra\"): se leen el importe, el comercio y la tarjeta; TDD = débito, TDC = crédito."}
