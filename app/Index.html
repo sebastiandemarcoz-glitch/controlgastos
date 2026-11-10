@@ -167,6 +167,16 @@ table.pv.fs input{width:120px}
 <div id="toast"></div>
 <input type="file" id="pdfIn" accept=".pdf,application/pdf" hidden onchange="onPDF(this)">
 <input type="file" id="fileIn" accept=".csv,.xls,.xlsx,.txt" hidden onchange="onFile(this)">
+<script>
+/* Si algo falla al abrir, se muestra el motivo en pantalla en vez de quedarse en "Cargando". */
+window.__errs=[];
+window.onerror=function(m,src,l,c){window.__errs.push(m+' (línea '+l+')');mostrarFallo();};
+window.addEventListener('unhandledrejection',function(e){window.__errs.push('Promesa: '+(e.reason&&e.reason.message||e.reason));});
+function mostrarFallo(){var v=document.getElementById('view');if(!v)return;
+  v.innerHTML='<div style="background:#fff3f3;border:1px solid #e6b3b3;border-radius:12px;padding:14px;margin:10px 0;font-size:14px;color:#8a1f1f"><b>La app no pudo abrir.</b><br>Mandale este texto a Claude:<pre style="white-space:pre-wrap;font-size:12px;margin:8px 0 0">'+
+  (window.__errs.join('\n')||'sin error visible')+'\nNavegador: '+navigator.userAgent+'</pre><button onclick="location.reload()" style="margin-top:8px;padding:8px 14px">Recargar</button></div>';}
+setTimeout(function(){var v=document.getElementById('view');if(v&&/^\s*Cargando…\s*$/.test(v.textContent)){window.__errs.push('El código de la pantalla no arrancó');mostrarFallo();}},20000);
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 /* ===================== Estado ===================== */

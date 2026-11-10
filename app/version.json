@@ -1,1 +1,1 @@
-{"version":"5.4.0","notas":"Nueva forma de actualizar: sin la API de Apps Script ni volver a publicar."}
+{"version":"5.4.1","notas":"Si la app no puede abrir, muestra el motivo en pantalla."}
