@@ -244,7 +244,7 @@ async function load(){
   try{
     const o=JSON.parse(await call('getData'));
     if(pend)return;
-    S.cfg=o.cfg;S.movs=o.movs;S.sheet=o.sheet||'';S.notifs=o.notifs||{pend:[],rec:[],cuotas:[]};S.notifs.cuotas=S.notifs.cuotas||[];S.reglas=o.reglas||[];S.token=o.token||'';S.fijos=o.fijos||[];S.difs=o.difs||[];S.extras=o.extras||[];S.app=o.app||{};S.url=o.url||'';S.ready=true;S.err=null;invalidate();render();
+    S.cfg=o.cfg;S.movs=o.movs;S.sheet=o.sheet||'';S.notifs=o.notifs||{pend:[],rec:[],cuotas:[]};S.notifs.cuotas=S.notifs.cuotas||[];S.reglas=o.reglas||[];S.token=o.token||'';S.fijos=o.fijos||[];S.difs=o.difs||[];S.extras=o.extras||[];S.app=o.app||{};S.url=o.url||'';S.avisos=o.avisos||{};S.ready=true;S.err=null;invalidate();render();
   }catch(e){S.err=(e&&e.message)||String(e);render()}
 }
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.ready&&document.getElementById('modal').hidden)load()});
@@ -614,7 +614,7 @@ function borrarTodo(){
 const NF0=v=>NF.format(v||0);
 function vClasificar(){
   const P=S.notifs.pend,R=S.notifs.rec;
-  const lbl={asignada:'<span class="chip">asignada</span>',descartada:'<span class="chip" style="background:var(--bg);color:var(--mu)">descartada</span>',ignorada:'<span class="chip" style="background:var(--bg);color:var(--mu)">no es gasto</span>',duplicada:'<span class="chip" style="background:var(--bg);color:var(--mu)">repetida</span>'};
+  const lbl={asignada:'<span class="chip">asignada</span>',descartada:'<span class="chip" style="background:var(--bg);color:var(--mu)">descartada</span>',ignorada:'<span class="chip" style="background:var(--bg);color:var(--mu)">no es gasto</span>',duplicada:'<span class="chip" style="background:var(--bg);color:var(--mu)">ya llegó por otro medio</span>'};
   const CQ=S.notifs.cuotas.filter(n=>S.movs.some(x=>x.id===n.mov)),D=S.difs;
   const grupos={};D.forEach(d=>(grupos[d.c]||(grupos[d.c]=[])).push(d));
   return `<div class="btns" style="margin-bottom:12px"><button class="btn" onclick="cargarPDF()">📄 Conciliar estado de cuenta (PDF)</button></div>
@@ -623,12 +623,14 @@ function vClasificar(){
   ${P.length?`<div class="catH" style="margin:4px 0 8px">Notificaciones sin asignar (${P.length})</div>`+P.map(cardNotif).join(''):(!CQ.length&&!D.length?`<div class="card empty">No hay nada por clasificar 🎉<br><span class="xs">Acá aparecen las notificaciones que la app no supo asignar, las compras para confirmar cuotas y las diferencias con los estados de cuenta.</span></div>`:'')}
   ${P.length>1?`<div class="btns" style="margin-bottom:12px"><button class="btn" onclick="reprocesar()">Volver a aplicar las reglas a todas</button></div>`:''}
   <div class="card"><h2>Últimas notificaciones recibidas</h2>
-   ${R.length?R.map(n=>`<div class="row" style="cursor:default"><div class="mid"><div class="t1">${h(n.comercio||n.titulo||n.app||'Notificación')} ${lbl[n.estado]||''}</div>
-     <div class="t2">${h(n.fecha)} · ${h(n.app)}${n.estado==='asignada'?' · '+h(n.concepto)+' · '+h(n.cuenta):''} · ${h(n.texto)}</div></div>
+   ${R.length?R.map(n=>`<div class="row" style="cursor:default"><div class="mid"><div class="t1" style="white-space:normal">${h(n.comercio||n.titulo||sinCanal(n.app)||'Aviso')} ${lbl[n.estado]||''}</div>
+     <div class="t2">${h(n.fecha)} · ${canalIco(n.app)} ${h(sinCanal(n.app))}${n.estado==='asignada'?' · '+h(n.concepto)+' · '+h(n.cuenta):''} · ${h(n.texto)}</div></div>
      ${n.importe?`<div class="num">${fmt(n.importe,n.mon)}</div>`:''}
-     ${n.estado!=='asignada'?`<button class="btn sm" onclick="estadoNotif(${js(n.id)},'pendiente')">Clasificar</button>`:''}</div>`).join(''):'<div class="empty">Todavía no llegó ninguna notificación. Configurá el celular en Ajustes → Notificaciones del celular.</div>'}
+     ${n.estado!=='asignada'&&n.estado!=='duplicada'?`<button class="btn sm" onclick="estadoNotif(${js(n.id)},'pendiente')">Clasificar</button>`:''}</div>`).join(''):'<div class="empty">Todavía no llegó ninguna notificación. Configurá el celular en Ajustes → Notificaciones del celular.</div>'}
   </div>`;
 }
+function canalIco(a){const c=(String(a||'').match(/^(APP|SMS|MAIL)\|/)||[])[1]||'APP';return c==='MAIL'?'✉️':c==='SMS'?'💬':'🔔'}
+function sinCanal(a){return String(a||'').replace(/^(APP|SMS|MAIL)\|/,'')}
 function cardNotif(n){
   const i=n.id,t=['G','I','T'].includes(n.tipo)?n.tipo:'G';
   const act=S.cfg.cuentas.filter(c=>!c.arch);
@@ -637,7 +639,7 @@ function cardNotif(n){
     return '<option value="">— elegir concepto —</option>'+Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es')).map(cat=>`<optgroup label="${h(cat)}">${sortN(cats[cat]).map(c=>`<option value="${h(c.n)}"${c.n===n.concepto?' selected':''}>${h(c.n)}</option>`).join('')}</optgroup>`).join('')};
   const cuenta=n.cuenta||'';
   return `<div class="card pc" id="nc_${h(i)}">
-   <h2><span style="text-transform:none">${h(n.app||'Notificación')} · ${h(n.fecha)}</span></h2>
+   <h2><span style="text-transform:none">${canalIco(n.app)} ${h(sinCanal(n.app)||'Aviso')} · ${h(n.fecha)}</span></h2>
    <div class="nt">${h(n.texto)}</div>
    <div class="seg" style="margin-bottom:10px">${[['G','Gasto'],['I','Ingreso'],['T','Transferencia']].map(([k,l])=>`<button type="button" data-k="${k}" class="${t===k?'on '+k:''}" onclick="ncTipo(${js(i)},'${k}')">${l}</button>`).join('')}</div>
    <div class="fld2"><div class="fld"><label>Importe</label><input type="text" inputmode="decimal" class="nc_m" value="${n.importe?String(n.importe).replace('.',','):''}"></div>
@@ -648,7 +650,7 @@ function cardNotif(n){
    <div class="fld2"><div class="fld"><label>Descripción</label><input type="text" class="nc_d" value="${h(n.comercio)}"></div>
     <div class="fld nc_nw"${t==='G'?'':' hidden'}><label>Cuotas</label><input type="number" class="nc_n" min="1" max="60" value="${n.cuotas||1}"></div></div>
    <div class="fld"><label><input type="checkbox" class="nc_rk" checked> Recordar: cuando diga <input type="text" class="nc_pk" value="${h(n.comercio)}" style="width:auto;display:inline-block;padding:3px 6px"> usar este concepto</label></div>
-   <div class="fld"><label><input type="checkbox" class="nc_rc"${n.cuenta?'':' checked'}> Recordar la cuenta para ${n.digitos?`la tarjeta terminada en <b>${h(n.digitos)}</b>`:`las notificaciones de <b>${h(n.app||'esta app')}</b>`}</label></div>
+   <div class="fld"><label><input type="checkbox" class="nc_rc"${n.cuenta?'':' checked'}> Recordar la cuenta para ${n.digitos?`la tarjeta terminada en <b>${h(n.digitos)}</b>`:`los avisos de <b>${h(sinCanal(n.app)||'esta app')}</b>`}</label></div>
    <div class="btns" style="justify-content:space-between"><button class="btn dan" onclick="estadoNotif(${js(i)},'descartada')">Descartar</button>
     <button class="btn pri" onclick="asignar(${js(i)})">Guardar</button></div>
   </div>`;
@@ -676,7 +678,7 @@ async function asignar(id){
   if(d)mov.d=d;
   const reglas=[];
   if(t!=='T'&&q('.nc_rk').checked&&q('.nc_pk').value.trim())reglas.push({tipo:'Concepto',palabra:q('.nc_pk').value.trim(),valor:k});
-  if(q('.nc_rc').checked)reglas.push({tipo:'Cuenta',palabra:n.digitos||'',app:n.app||'',valor:c});
+  if(q('.nc_rc').checked)reglas.push({tipo:'Cuenta',palabra:n.digitos||'',app:n.digitos?'':sinCanal(n.app),valor:c});
   S.movs=S.movs.filter(x=>x.id!==mov.id);
   const N=t==='G'?Math.max(1,Math.min(60,parseInt(q('.nc_n').value)||1)):1;
   if(N>1){const cs=crearCuotas(mov,N,mov.m);S.movs.push(...cs);op('importMovs',JSON.stringify(cs)).catch(()=>{});mov.id=cs[0].id}else S.movs.push(mov);
@@ -1121,11 +1123,27 @@ async function actualizarYa(){
 function vNotifCfg(){
   const rc=S.reglas.filter(r=>r.tipo==='Concepto'),ra=S.reglas.filter(r=>r.tipo==='Cuenta');
   const byV={};rc.forEach(r=>(byV[r.valor]||(byV[r.valor]=[])).push(r.palabra));
-  return `<div class="card" style="margin-top:12px"><h2>Notificaciones del celular</h2>
-   <p class="sm" style="margin-top:0">El celular manda cada notificación del banco a tu planilla. La app asigna sola las que reconoce; las demás quedan en <b>Por clasificar</b>.</p>
+  const AV=S.avisos||{};
+  const apk='https://github.com/sebastiandemarcoz-glitch/controlgastos/releases/latest/download/ControlGastos-Avisos.apk';
+  const link=AV.receptor?'intent://config?u='+encodeURIComponent(AV.receptor)+'&k='+encodeURIComponent(S.token)+'#Intent;scheme=cgavisos;package=uy.cg.avisos;end':'';
+  return `<div class="card" style="margin-top:12px"><h2>Avisos de gastos</h2>
+   <p class="sm" style="margin-top:0">La app se entera sola de tus gastos por <b>mail</b>, <b>SMS</b> y <b>notificaciones</b> de las apps de los bancos. Asigna las que reconoce y deja el resto en <b>Por clasificar</b>. Si el mismo gasto llega por dos medios, queda uno solo.</p>
+   <div class="catH">1 · Mails (Gmail)</div>
+   <div class="fld"><label><input type="checkbox"${AV.gmail?' checked':''} onchange="activarMail(this.checked)"> Leer los mails de aviso de mis bancos</label></div>
+   ${AV.gmail?`<div class="xs ${/error/.test(AV.gmailEstado)?'neg':'mu'}">${/error/.test(AV.gmailEstado)?'No pude leer Gmail: '+h(AV.gmailEstado.replace(/^error: /,''))+'. Abrí la app de nuevo y aceptá el permiso de Gmail que te pide Google.':'Último control: '+h((AV.gmailEstado||'todavía no').replace(/^ok /,''))}</div>`:''}
+   <div class="fld" style="margin-top:6px"><label>Remitentes (palabras del mail del banco)</label><input type="text" id="av_rem" value="${h(AV.remitentes||'')}" onchange="activarMail(${AV.gmail?'true':'false'},this.value)"></div>
+   <div class="xs mu">Revisá en el home banking de cada banco que tengas activados los avisos de compra por mail.</div>
+   <div class="catH" style="margin-top:14px">2 · SMS y notificaciones (app de Android)</div>
+   <ol class="sm" style="padding-left:18px;margin:6px 0">
+    <li>Desde el celular, <a href="${apk}" target="_blank" rel="noopener">descargá la app “Gastos · Avisos”</a> e instalala. Si Android pregunta, permití instalar apps de esta fuente.</li>
+    <li>${link?`Tocá <a class="btn sm pri" href="${h(link)}" target="_top" style="text-decoration:none">Configurar la app de avisos</a> (abre la app ya conectada).`:'Abrí la app y pegá la dirección del receptor y la clave de abajo.'}</li>
+    <li>En la app, tocá <b>Abrir permiso de notificaciones</b> y <b>Permitir SMS</b>. Si dice “configuración restringida”, seguí la ayuda que muestra la app.</li>
+   </ol>
+   <div class="xs mu">Dirección del receptor: ${AV.receptor?`<code class="tok">${h(AV.receptor)}</code> <button class="btn sm" onclick="copiar(${js(AV.receptor)})">Copiar</button>`:`<input type="text" id="av_url" placeholder="https://script.google.com/macros/s/…/exec (implementación con acceso Cualquier persona)" style="margin-top:4px"><button class="btn sm" style="margin-top:4px" onclick="guardarReceptor()">Guardar</button>`}</div>
+   <div class="xs mu" style="margin-top:4px">Clave: <code class="tok">${h(S.token)}</code> <button class="btn sm" onclick="copiar(${js(S.token)})">Copiar</button></div>
+   <div class="catH" style="margin-top:14px">Opciones</div>
    <div class="fld"><label>Preguntar en cuántas cuotas fue la compra</label><select onchange="S.cfg.preguntarCuotas=this.value;op('setConfig','preguntar_cuotas',this.value).catch(()=>{});toast('Guardado')">
      <option value="tc"${S.cfg.preguntarCuotas!=='todos'?' selected':''}>Solo en compras con tarjeta de crédito</option><option value="todos"${S.cfg.preguntarCuotas==='todos'?' selected':''}>En todos los gastos que entran solos</option></select></div>
-   <div class="sm">Clave para MacroDroid: <code class="tok">${h(S.token)}</code> <button class="btn sm" onclick="copiar(${js(S.token)})">Copiar</button></div>
    <div class="fld" style="margin-top:12px"><label>Probar una notificación (pegá el texto como llega del banco)</label>
     <input type="text" id="pr_app" placeholder="App (ej. BBVA)" style="margin-bottom:6px"><textarea id="pr_txt" placeholder="Compra aprobada por $ 1.250,00 en DISCO 15 con tu tarjeta terminada en 1234"></textarea></div>
    <button class="btn" onclick="probar()">Probar</button><div id="pr_out" class="sm" style="margin-top:8px"></div>
@@ -1141,6 +1159,14 @@ function vNotifCfg(){
    </div>
   </div>`;
 }
+async function activarMail(si,rem){
+  S.avisos.gmail=si;if(rem!=null)S.avisos.remitentes=rem;render();
+  await op('activarGmail',si,rem==null?null:rem).catch(()=>{});
+  toast(si?'Listo: desde ahora la app lee los mails de tus bancos':'Lectura de mails desactivada');
+  if(si)load();
+}
+async function guardarReceptor(){const u=document.getElementById('av_url').value.trim();if(!/^https:\/\/script\.google\.com\//.test(u)){toast('Pegá la dirección que termina en /exec');return}
+  S.avisos.receptor=u;await op('guardarUrlReceptor',u).catch(()=>{});render();toast('Guardado')}
 async function copiar(t){try{await navigator.clipboard.writeText(t);toast('Copiado')}catch(e){toast('Mantené apretado el texto para copiarlo')}}
 async function probar(){
   const app=document.getElementById('pr_app').value,txt=document.getElementById('pr_txt').value;if(!txt.trim())return;

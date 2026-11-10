@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.1.0';
+const VERSION_APP = '5.2.0';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -292,16 +292,21 @@ function parseNotif_(app, titulo, texto) {
   const cm = full.match(/comercio:?\s*([^.,;]+)/i);
   if (cm) p.comercio = cm[1].trim();
   else {
-    const re = /\ben\s+(.+?)(?=\s+(?:con|por|en|el dia|el d[ií]a|a las|desde|usando|mediante|fue|ha sido|hoy|aprobad[ao]|autorizad[ao]|realizad[ao]|exitosa)\b|[,;]|\.\s|\.$|$)/gi;
+    const re = /\ben\s+(.+?)(?=\s+(?:con|por|en|el dia|el d[ií]a|el\s+\d+|a las|desde|usando|mediante|fue|ha sido|hoy|aprobad[ao]|autorizad[ao]|realizad[ao]|exitosa)\b|[,;]|\.\s|\.$|$)/gi;
     let x;
     while ((x = re.exec(full))) {
       const c = x[1].trim();
-      if (/^(tu|su|sus|tus|cuenta|caja|tarjeta|cuotas?|u\$s|usd|uyu|\$|\d)\b/i.test(c) || /^(la|el|los|las|una?)\s+(cuenta|tarjeta|caja|fecha|dia|día|cuotas?)\b/i.test(c)) continue;
+      if (/^\d/.test(c) || /^(tu|su|sus|tus|cuenta|caja|tarjeta|cuotas?|u\$s|usd|uyu|\$)\b/i.test(c) || /^(la|el|los|las|una?)\s+(cuenta|tarjeta|caja|fecha|dia|día|cuotas?)\b/i.test(c)) continue;
       p.comercio = c.slice(0, 40); break;
     }
   }
   const cq = full.match(/\b(\d{1,2})\s*cuotas\b/i);
   p.cuotas = cq ? +cq[1] : 1;
+  if (!p.comercio && m) {   // "Compra U$S 20,00 ANTHROPIC CLAUDE tarjeta 4321"
+    const resto = full.slice(full.indexOf(m[0]) + m[0].length);
+    const cx = resto.match(/^\s*[,.]?\s*([A-Za-z][A-Za-z0-9*.&'\/ -]{2,40}?)(?=\s+(?:tarjeta|con|el|en|por|fecha|hora|aprobad[ao])\b|[.,;]|$)/i);
+    if (cx && !/^(en|con|por|pesos|d[oó]lares)$/i.test(cx[1].trim())) p.comercio = cx[1].trim();
+  }
   const dg = full.match(/(?:terminad[ao] en|finalizad[ao] en|final|\*+|x{3,4})\s*(\d{4})\b/i);
   if (dg) p.digitos = dg[1];
   return p;
@@ -360,6 +365,16 @@ function heuristica_(p, cfg) {
   }
   return c.length === 1 ? c[0].n : '';
 }
+/** Canal del aviso: el campo App viene como "APP|BBVA", "SMS|BROU" o "MAIL|remitente" (MacroDroid: sin prefijo = APP). */
+function canal_(app) { const m = String(app || '').match(/^(APP|SMS|MAIL)\|/); return m ? m[1] : 'APP'; }
+function sinCanal_(app) { return String(app || '').replace(/^(APP|SMS|MAIL)\|/, ''); }
+const VENTANA_DUP = 3 * 3600 * 1000;   // mismo gasto por dos medios: hasta 3 horas de diferencia
+function mismoComercio_(a, b) {
+  if (!a || !b) return true;
+  const A = palabras_(a).trim().split(' ').filter(function (w) { return w.length > 2 && !/^\d+$/.test(w); });
+  const B = palabras_(b);
+  return !A.length || A.some(function (w) { return B.indexOf(' ' + w + ' ') > -1; });
+}
 /** Procesa las notificaciones que dejó el receptor (estado "nueva"). */
 function procesarNuevas_() {
   const s = sh_('Notificaciones'), n = s.getLastRow();
@@ -381,7 +396,20 @@ function procesarNuevas_() {
         if (q[5] !== 'duplicada' && String(q[2]) === String(r[2]) && String(q[3]) === String(r[3]) && String(q[4]) === String(r[4]) &&
             q[1] instanceof Date && Math.abs(t0 - q[1].getTime()) < 600000) { r[5] = 'duplicada'; return; }
       }
-      const p = parseNotif_(String(r[2]), String(r[3]), String(r[4]));
+      const p = parseNotif_(sinCanal_(r[2]), String(r[3]), String(r[4]));
+      // el mismo gasto que ya llegó por otro medio (notificación, SMS o mail)
+      if (p.esMov) {
+        const can = canal_(r[2]);
+        for (let j = 0; j < d2.length; j++) {
+          const q = d2[j];
+          if (j === i || q[5] === 'nueva' || q[5] === 'duplicada' || q[5] === 'ignorada' || !q[6]) continue;
+          if (canal_(q[2]) === can || !(q[1] instanceof Date) || Math.abs(t0 - q[1].getTime()) > VENTANA_DUP) continue;
+          if (String(q[7] || 'UYU') !== p.mon || Math.abs(num_(q[6]) - p.importe) > 0.01) continue;
+          if (!mismoComercio_(p.comercio, String(q[8])) && !mismoComercio_(String(q[8]), p.comercio)) continue;
+          d2[i] = [r[0], r[1], r[2], r[3], r[4], 'duplicada', p.importe, p.mon, p.comercio, q[9], q[10], q[11], p.tipo, ''];
+          return;
+        }
+      }
       let estado = 'ignorada', mid = '', cuotas = '';
       if (p.esMov) {
         resolver_(p, cfg, reglas);
@@ -401,7 +429,76 @@ function procesarNuevas_() {
   });
 }
 /** Lo ejecuta un activador cada 5 minutos, así los gastos se asignan aunque no abras la app. */
-function procesarNotificaciones() { procesarNuevas_(); }
+function procesarNotificaciones() { leerGmail_(); procesarNuevas_(); }
+
+/* ---------- mails de los bancos (Gmail) ---------- */
+const REMITENTES_DEF = 'bbva, itau, brou, sistarbanc, oca, prex, santander, scotiabank, hsbc, midinero, heritage, bandes';
+function leerGmail_() {
+  if (getConfig_('leer_gmail') !== 'si') return 0;
+  try {
+    const desde = new Date(String(getConfig_('gmail_desde') || new Date().toISOString()));
+    const rem = String(getConfig_('remitentes_mail') || REMITENTES_DEF).split(/[,;\s]+/).filter(String);
+    const dia = Utilities.formatDate(new Date(desde.getTime() - 86400000), 'UTC', 'yyyy/MM/dd');
+    const q = 'after:' + dia + ' (' + rem.map(function (r) { return 'from:' + r; }).join(' OR ') + ')';
+    const s = sh_('Notificaciones'), n = s.getLastRow();
+    const ids = {};
+    if (n > 1) s.getRange(2, 1, n - 1, 1).getValues().forEach(function (r) { ids[String(r[0])] = 1; });
+    const nuevas = [];
+    GmailApp.search(q, 0, 40).forEach(function (th) {
+      th.getMessages().forEach(function (m) {
+        const id = 'g' + m.getId();
+        if (ids[id] || m.getDate() < desde) return;
+        ids[id] = 1;
+        const asunto = m.getSubject() || '';
+        if (/promo|beneficio|descuento exclusivo|sorte|gan[aá]|newsletter|oferta|invita|encuesta|novedad/i.test(asunto)) return;
+        const cuerpo = (m.getPlainBody() || '').replace(/\s+/g, ' ').trim();
+        const k = cuerpo.search(/(U\$S|US\$|USD|UYU|\$)\s?-?\d/i);
+        const trozo = k < 0 ? '' : cuerpo.slice(Math.max(0, k - 220), k + 220);
+        const texto = (trozo || cuerpo.slice(0, 300)).trim();
+        if (!/(U\$S|US\$|USD|UYU|\$)\s?-?\d/i.test(asunto + ' ' + texto)) return;
+        if (!/compra|consumo|d[eé]bito|transacci|transfer|acredit|pago|retiro|cobro|dep[oó]sito|cargo|operaci/i.test(asunto + ' ' + texto)) return;
+        const deQuien = String(m.getFrom() || '').replace(/<.*>/, '').replace(/"/g, '').trim() || String(m.getFrom());
+        nuevas.push([id, m.getDate(), 'MAIL|' + deQuien, asunto, texto, 'nueva']);
+      });
+    });
+    if (nuevas.length) withLock_(function () {
+      const s2 = sh_('Notificaciones'), n2 = s2.getLastRow();
+      s2.getRange(n2 + 1, 1, nuevas.length, 6).setValues(nuevas);
+    });
+    setConfig_('gmail_estado', 'ok ' + Utilities.formatDate(new Date(), tz_(), 'dd/MM HH:mm') + (nuevas.length ? ' · ' + nuevas.length + ' nuevos' : ''));
+    return nuevas.length;
+  } catch (e) {
+    setConfig_('gmail_estado', 'error: ' + (e.message || e));
+    return 0;
+  }
+}
+function activarGmail(si, remitentes) {
+  dueno_();
+  return withLock_(function () {
+    setConfig_('leer_gmail', si ? 'si' : 'no');
+    if (si) setConfig_('gmail_desde', new Date().toISOString());
+    if (remitentes != null) setConfig_('remitentes_mail', String(remitentes));
+    return 'ok';
+  });
+}
+/** Ejecutala una vez desde el editor si Google pide permiso para leer Gmail. */
+function autorizar() { GmailApp.getInboxUnreadCount(); return 'ok'; }
+
+/* ---------- dirección del receptor (para configurar la app de Android) ---------- */
+function urlReceptor_() {
+  const guardada = String(getConfig_('url_receptor') || '');
+  if (guardada) return guardada;
+  try {
+    const deps = api_('get', '/deployments').deployments || [];
+    for (let i = 0; i < deps.length; i++) {
+      const web = (deps[i].entryPoints || []).filter(function (e) { return e.entryPointType === 'WEB_APP'; })[0];
+      const cfg = web && web.webApp && web.webApp.entryPointConfig;
+      if (cfg && cfg.access === 'ANYONE_ANONYMOUS' && web.webApp.url) { setConfig_('url_receptor', web.webApp.url); return web.webApp.url; }
+    }
+  } catch (e) { /* sin API: se carga a mano */ }
+  return '';
+}
+function guardarUrlReceptor(u) { dueno_(); return withLock_(function () { setConfig_('url_receptor', String(u || '').trim()); return 'ok'; }); }
 
 /* ---------- actualización automática ---------- */
 function cmpVer_(a, b) {
@@ -498,7 +595,7 @@ function notifs_() {
       comercio: String(r[8]), cuenta: String(r[9]), concepto: String(r[10]), mov: String(r[11]), tipo: String(r[12] || 'G'),
       pregunta: String(r[13]), digitos: '', cuotas: 1 };
   });
-  all.forEach(function (x) { if (x.estado === 'pendiente' || x.pregunta === 'preguntar') { const p = parseNotif_(x.app, x.titulo, x.texto); x.digitos = p.digitos; x.cuotas = p.cuotas; } });
+  all.forEach(function (x) { if (x.estado === 'pendiente' || x.pregunta === 'preguntar') { const p = parseNotif_(sinCanal_(x.app), x.titulo, x.texto); x.digitos = p.digitos; x.cuotas = p.cuotas; } });
   const pend = all.filter(function (x) { return x.estado === 'pendiente'; });
   const cuotas = all.filter(function (x) { return x.estado === 'asignada' && x.pregunta === 'preguntar'; });
   const rec = all.filter(function (x) { return x.estado !== 'pendiente'; }).slice(-40).reverse();
@@ -532,6 +629,7 @@ function agregarReglas_(nuevas) {
 function getData() {
   dueno_();
   instalarActivadores_();
+  leerGmail_();
   procesarNuevas_();
   const cfg = leerCfg_();
   const cot = cotizacion_();
@@ -549,7 +647,9 @@ function getData() {
   const nuevosFijos = generarFijos_();
   nuevosFijos.forEach(function (x) { movs.push(x); });
   return JSON.stringify({ cfg: cfg, movs: movs, sheet: book_().getUrl(), notifs: notifs_(), reglas: leerReglas_(), token: token_(),
-    fijos: leerFijos_(), difs: leerDifs_(), extras: leerExtras_(), app: infoVersion_(), url: ScriptApp.getService().getUrl() });
+    fijos: leerFijos_(), difs: leerDifs_(), extras: leerExtras_(), app: infoVersion_(), url: ScriptApp.getService().getUrl(),
+    avisos: { gmail: getConfig_('leer_gmail') === 'si', gmailEstado: String(getConfig_('gmail_estado') || ''),
+      remitentes: String(getConfig_('remitentes_mail') || REMITENTES_DEF), receptor: urlReceptor_() } });
 }
 function infoVersion_() {
   const rem = versionRemota_();
@@ -665,7 +765,7 @@ function reprocesar() {
     let k = 0;
     data.forEach(function (r) {
       if (r[5] !== 'pendiente') return;
-      const p = resolver_(parseNotif_(r[2], r[3], r[4]), cfg, reglas);
+      const p = resolver_(parseNotif_(sinCanal_(r[2]), r[3], r[4]), cfg, reglas);
       r[9] = p.cuenta || ''; r[10] = p.concepto || '';
       if (p.cuenta && p.concepto && (p.tipo === 'G' || p.tipo === 'I')) {
         const mid = 'm' + String(r[0]).slice(1);
