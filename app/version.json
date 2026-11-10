@@ -1,1 +1,1 @@
-{"version":"5.5.2","notas":"Informes: comparación año a año de cada entrada (por mes, acumulado o por año)."}
+{"version": "5.5.3", "notas": "Gastos/ingresos fijos ahora dentro de Presupuesto. Inicio: Saldo neto desglosado (bancos − deuda de tarjetas − cuotas futuras), sin cuentas archivadas."}

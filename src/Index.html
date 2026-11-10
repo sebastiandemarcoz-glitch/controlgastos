@@ -301,19 +301,19 @@ const ICONS={
  mas:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>',
  ajustes:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>'
 };
-const TABS=[['inicio','Inicio'],['movimientos','Movimientos'],['clasificar','Por clasificar'],['presupuesto','Presupuesto'],['cuentas','Cuentas'],['informes','Informes'],['fijos','Gastos fijos'],['ajustes','Ajustes']];
+const TABS=[['inicio','Inicio'],['movimientos','Movimientos'],['clasificar','Por clasificar'],['presupuesto','Presupuesto'],['cuentas','Cuentas'],['informes','Informes'],['ajustes','Ajustes']];
 const TABS_CEL=[['inicio','Inicio'],['movimientos','Movimientos'],['clasificar','Clasificar'],['presupuesto','Presupuesto'],['mas','Más']];
 function buildNav(){
   document.getElementById('tabs').innerHTML=TABS_CEL.map(([k,l])=>`<button data-t="${k}" onclick="go('${k}')"><span class="ib">${ICONS[k]}${k==='clasificar'?'<em class="badge" hidden></em>':''}</span><span>${l}</span></button>`).join('');
   document.getElementById('side').innerHTML='<div class="brand">💰 Control de Gastos</div><button class="newbtn" onclick="openMov()">+ Nuevo movimiento</button>'+
     TABS.map(([k,l])=>`<button class="nv" data-t="${k}" onclick="go('${k}')"><span class="ib">${ICONS[k]}${k==='clasificar'?'<em class="badge" hidden></em>':''}</span><span>${l}</span></button>`).join('');
 }
-function go(t){V.tab=t;window.scrollTo(0,0);render()}
+function go(t){if(t==='fijos'){t='presupuesto';V.pres=V.pres||{per:ym(hoy()),modo:'mes',edit:false,tipo:'G'}}V.tab=t;window.scrollTo(0,0);render()}
 
 /* ===================== Render ===================== */
 function render(){
   setSync();
-  const enMas=['cuentas','informes','fijos','ajustes'].includes(V.tab);
+  const enMas=['cuentas','informes','ajustes'].includes(V.tab);
   document.querySelectorAll('[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===V.tab||(b.dataset.t==='mas'&&enMas&&b.closest('#tabs'))));
   const np=S.notifs.pend.length+S.notifs.cuotas.length+S.difs.length;document.querySelectorAll('.badge').forEach(b=>{b.hidden=!np;b.textContent=np>99?'99+':np});
   const view=document.getElementById('view'),title=document.getElementById('title');
@@ -347,7 +347,11 @@ function vInicio(){
   const sal=saldos(),hy=hoy(),mes=ym(hy);
   let tU=0,tD=0,fut=0;
   const cs=S.cfg.cuentas.filter(c=>!c.arch);
-  for(const c of S.cfg.cuentas){const s=sal[c.n];if(c.mon==='USD')tD+=s.s;else tU+=s.s;fut+=toUYU(s.fut,c.mon)}
+  let bancos=0,deudaTC=0,cuotasFut=0,usdB=0;
+  for(const c of S.cfg.cuentas){if(c.arch)continue;const s=sal[c.n];
+    if(c.mon==='USD')tD+=s.s;else tU+=s.s;fut+=toUYU(s.fut,c.mon);
+    if(esTC(c.n)){deudaTC+=-toUYU(s.s,c.mon);cuotasFut+=-toUYU(s.fut,c.mon)}else{bancos+=toUYU(s.s,c.mon);if(c.mon==='USD')usdB+=s.s}}
+  const neto=bancos-deudaTC-cuotasFut;
   const ms=movs().filter(x=>x.f.startsWith(mes));const{g,i}=sumGI(ms);
   const by={};for(const x of ms)if(x.t==='G'){const c=catOf(x);by[c]=(by[c]||0)+toUYU(x.m,monOf(x.c))}
   const top=Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,7);const mx=top.length?top[0][1]:1;
@@ -358,12 +362,12 @@ function vInicio(){
   ${pr.pres?`<div class="card" style="cursor:pointer" onclick="go('presupuesto')"><h2>Presupuesto del mes<span class="num" style="text-transform:none;font-size:20px">${pctTxt(pr.gas,pr.pres)}</span></h2>
     <div class="sm">Gastado <b class="num">${fmt0(pr.gas)}</b> de <b class="num">${fmt0(pr.pres)}</b> · disponible <b class="num ${pr.pres-pr.gas<0?'neg':''}">${fmt0(pr.pres-pr.gas)}</b></div></div>`:''}
   <div class="grid2">
-  <div class="card"><h2>Saldo total</h2>
-    <div class="big num ${tU+toUYU(tD,'USD')<0?'neg':''}">${fmtS(tU+toUYU(tD,'USD'),'UYU')}</div>
-    <div class="kv sm"><span class="mu">En pesos</span><span class="num">${fmtS(tU,'UYU')}</span></div>
-    <div class="kv sm"><span class="mu">En dólares</span><span class="num">${fmtS(tD,'USD')}</span></div>
-    <div class="xs mu">Dólar eBROU venta: $ ${NF.format(cot())}${S.cfg.cotFecha?' · '+h(S.cfg.cotFecha):''}</div>
-    ${Math.abs(fut)>0.005?`<div class="kv sm" style="margin-top:6px"><span class="mu">Movimientos futuros (cuotas)</span><span class="num ${fut<0?'neg':'pos'}">${fmtS(fut,'UYU')}</span></div>`:''}
+  <div class="card"><h2>Saldo neto <button class="btn sm" onclick="fijarSaldos()">Fijar saldos</button></h2>
+    <div class="big num ${neto<0?'neg':''}">${fmtS(neto,'UYU')}</div>
+    <div class="kv sm"><span class="mu">En bancos y efectivo${usdB?` <span class="xs">(incluye ${fmt(usdB,'USD')})</span>`:''}</span><span class="num">${fmtS(bancos,'UYU')}</span></div>
+    <div class="kv sm"><span class="mu">− Deuda de tarjetas hoy</span><span class="num ${deudaTC>0?'neg':''}">${fmtS(-deudaTC,'UYU')}</span></div>
+    <div class="kv sm"><span class="mu">− Cuotas futuras de tarjetas</span><span class="num ${cuotasFut>0?'neg':''}">${fmtS(-cuotasFut,'UYU')}</span></div>
+    <div class="xs mu" style="margin-top:4px">Es lo que te queda si pagaras hoy todas las tarjetas, incluidas las cuotas que faltan. No cuenta las cuentas archivadas. Dólares a $ ${NF.format(cot())} (eBROU venta${S.cfg.cotFecha?', '+h(S.cfg.cotFecha):''}).</div>
   </div>
   <div class="card"><h2>${h(perLabel(mes))}</h2>
     <div class="kv"><span>Ingresos</span><span class="num pos">${fmt(i,'UYU')}</span></div>
@@ -894,7 +898,7 @@ function vPresupuesto(){
     return cab+`<div class="card"><h2>${G?'Gasto':'Ingreso'} mensual previsto por concepto</h2>
      <p class="sm mu" style="margin-top:0">${G?'Poné cuánto querés gastar por mes en cada concepto':'Poné cuánto esperás cobrar por mes en cada concepto (sueldo, alquileres…)'} en pesos. Dejalo vacío si no lo querés controlar.</p>
      <table class="pr ed">${Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es')).map(cat=>`<tr class="cat"><td colspan="2">${h(cat)}</td></tr>`+sortN(cats[cat]).map(c=>`<tr><td>${h(c.n)}</td><td><input type="text" inputmode="decimal" data-con="${h(c.n)}" value="${c.pres?String(c.pres).replace('.',','):''}" placeholder="0"></td></tr>`).join('')).join('')||'<tr><td class="empty">No hay conceptos de este tipo. Agregalos en Ajustes.</td></tr>'}</table>
-     <div class="btns" style="justify-content:flex-end;margin-top:10px"><button class="btn" onclick="V.pres.edit=false;render()">Cancelar</button><button class="btn pri" onclick="guardarPres('${t}')">Guardar</button></div></div>`+vExtras(P);
+     <div class="btns" style="justify-content:flex-end;margin-top:10px"><button class="btn" onclick="V.pres.edit=false;render()">Cancelar</button><button class="btn pri" onclick="guardarPres('${t}')">Guardar</button></div></div>`+vExtras(P)+vFijos(t);
   }
   const cats={},sin=[];
   for(const c of S.cfg.conceptos.filter(c=>c.tipo===t)){
@@ -923,7 +927,8 @@ function vPresupuesto(){
      <table class="pr">${sin.sort((a,b)=>b.g-a.g).map(r=>`<tr class="sub" onclick="filtrar({k:${js(t+'|'+r.c.n)}},'${per}')"><td>${h(r.c.n)}<div class="xs mu">${h(r.c.cat||'')}</div></td><td class="num">${fmt0(r.g)}</td></tr>`).join('')}</table></details>`:''}
    <div class="xs mu" style="margin-top:8px">En pesos; dólares a $ ${NF.format(cot())}. Tocá un concepto para ver sus movimientos.</div>
   </div>
-  ${vExtras(P)}`;
+  ${vExtras(P)}
+  ${vFijos(t)}`;
 }
 /* ---------- Excedente: ingresos previstos − gastos previstos, mes a mes ---------- */
 function vExcedente(P){
@@ -1009,21 +1014,21 @@ function guardarPres(t){
 
 /* ---------- Más (celular) ---------- */
 function vMas(){
-  return `<div class="card mas"><a onclick="fijarSaldos()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg><span><b>Fijar saldos de hoy</b><br><span class="xs mu">Lo que tenés en cada cuenta y lo que debés en cada tarjeta</span></span></a>${[['cuentas','Cuentas'],['informes','Informes'],['fijos','Gastos fijos'],['ajustes','Ajustes']].map(([k,l])=>`<a onclick="go('${k}')">${ICONS[k]||''}<span>${l}</span></a>`).join('')}</div>`;
+  return `<div class="card mas"><a onclick="fijarSaldos()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg><span><b>Fijar saldos de hoy</b><br><span class="xs mu">Lo que tenés en cada cuenta y lo que debés en cada tarjeta</span></span></a>${[['cuentas','Cuentas'],['informes','Informes'],['ajustes','Ajustes']].map(([k,l])=>`<a onclick="go('${k}')">${ICONS[k]||''}<span>${l}</span></a>`).join('')}</div>`;
 }
 
 /* ---------- Gastos fijos ---------- */
-function vFijos(){
-  const L=S.fijos;
-  return `<div class="btns" style="margin-bottom:12px"><button class="btn pri" onclick="openFijo()">+ Nuevo gasto fijo</button></div>
-  <div class="card"><h2>Gastos e ingresos fijos</h2>
-   <p class="xs mu" style="margin-top:0">Cada mes se crea solo el movimiento en el día indicado (aparece como “futuro” hasta esa fecha). Si un mes cambia el importe, editá ese movimiento.</p>
+function vFijos(t){
+  t=t||'G';const G=t==='G';
+  const L=S.fijos.filter(f=>f.t===t);
+  return `<div class="card"><h2>${G?'Gastos fijos mensuales':'Ingresos fijos mensuales'} <button class="btn sm" onclick="openFijo(null,'${t}')">+ Agregar</button></h2>
+   <p class="xs mu" style="margin-top:0">${G?'Hipoteca, ANTEL, UTE, colegio…':'Sueldo, alquileres…'} Cada mes se crea solo el movimiento en el día indicado (aparece como “futuro” hasta esa fecha). Si un mes cambia el importe, editá ese movimiento.</p>
    ${L.length?L.map(f=>`<div class="row" onclick="openFijo(${js(f.id)})"><div class="ico ${f.t}">${f.t==='I'?'+':'⟳'}</div><div class="mid"><div class="t1">${h(f.n)}${f.activo?'':'<span class="chip" style="background:var(--bg);color:var(--mu)">pausado</span>'}</div>
-     <div class="t2">Día ${f.dia} · ${h(f.k)} · ${h(f.c)} · desde ${h(perLabel(f.desde))}${f.hasta?' hasta '+h(perLabel(f.hasta)):''}</div></div><div class="num ${f.t==='I'?'pos':'neg'}">${fmt(f.m,monOf(f.c))}</div></div>`).join(''):'<div class="empty">Agregá la hipoteca, ANTEL, UTE, el sueldo… lo que se repite todos los meses.</div>'}
+     <div class="t2">Día ${f.dia} · ${h(f.k)} · ${h(f.c)} · desde ${h(perLabel(f.desde))}${f.hasta?' hasta '+h(perLabel(f.hasta)):''}</div></div><div class="num ${f.t==='I'?'pos':'neg'}">${fmt(f.m,monOf(f.c))}</div></div>`).join(''):`<div class="empty">${G?'Todavía no cargaste gastos fijos.':'Todavía no cargaste ingresos fijos.'}</div>`}
   </div>`;
 }
-function openFijo(id){
-  const f=id?S.fijos.find(x=>x.id===id):{n:'',t:'G',c:(S.cfg.cuentas.find(c=>!c.arch)||{}).n||'',k:'',m:'',dia:1,desde:ym(hoy()),hasta:'',activo:true};
+function openFijo(id,tipo){
+  const f=id?S.fijos.find(x=>x.id===id):{n:'',t:tipo||'G',c:(S.cfg.cuentas.find(c=>!c.arch)||{}).n||'',k:'',m:'',dia:1,desde:ym(hoy()),hasta:'',activo:true};
   V._fj={...f};
   const accO=S.cfg.cuentas.filter(c=>!c.arch||c.n===f.c).map(c=>`<option value="${h(c.n)}"${c.n===f.c?' selected':''}>${h(c.n)} (${sym(c.mon)})</option>`).join('');
   const kO=t=>'<option value="">— elegir —</option>'+sortN(S.cfg.conceptos.filter(c=>c.tipo===t)).map(c=>`<option value="${h(c.n)}"${c.n===f.k?' selected':''}>${h(c.n)}</option>`).join('');
