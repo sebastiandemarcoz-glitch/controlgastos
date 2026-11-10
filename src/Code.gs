@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.4.2';
+const VERSION_APP = '5.4.3';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -66,6 +66,7 @@ function doPost(e) {
   withLock_(function () {
     const s = sh_('Notificaciones'), n = s.getLastRow();
     s.getRange(n + 1, 1, 1, 6).setValues([['n' + Utilities.getUuid().replace(/-/g, '').slice(0, 12), new Date(), app, titulo, texto, 'nueva']]);
+    setConfig_('ultimo_aviso', Utilities.formatDate(new Date(), tz_(), 'dd/MM HH:mm') + ' · ' + sinCanal_(app));
   });
   return txt_('recibida');
 }
@@ -481,6 +482,30 @@ function autorizar() { GmailApp.getInboxUnreadCount(); return 'ok'; }
 
 /* ---------- dirección del receptor (para configurar la app de Android) ---------- */
 function urlReceptor_() { return String(getConfig_('url_receptor') || ''); }
+/** Manda un aviso de prueba al receptor desde el servidor y explica qué pasa. */
+function probarReceptor() {
+  dueno_();
+  const url = urlReceptor_();
+  if (!url) return JSON.stringify({ ok: false, msg: 'Falta cargar la dirección del receptor (la implementación con acceso “Cualquier persona”).' });
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(url))
+    return JSON.stringify({ ok: false, msg: 'La dirección no tiene el formato correcto: tiene que ser https://script.google.com/macros/s/…/exec' });
+  const marca = 'PRUEBA GASTOS AVISOS ' + Utilities.getUuid().slice(0, 6);
+  const cuerpo = JSON.stringify({ k: token_(), app: 'APP|Prueba del receptor', titulo: 'Prueba', texto: 'Compra por $ 1,00 en ' + marca });
+  let r;
+  try { r = UrlFetchApp.fetch(url, { method: 'post', contentType: 'application/json', payload: cuerpo, followRedirects: false, muteHttpExceptions: true }); }
+  catch (e) { return JSON.stringify({ ok: false, msg: 'No pude conectarme con el receptor: ' + e.message }); }
+  const code = r.getResponseCode(), loc = String((r.getAllHeaders() || {}).Location || (r.getAllHeaders() || {}).location || '');
+  if (/accounts\.google\.com|ServiceLogin/i.test(loc) || (code === 200 && /accounts\.google\.com|Iniciar sesi/i.test(r.getContentText().slice(0, 3000))))
+    return JSON.stringify({ ok: false, msg: 'Esa dirección pide iniciar sesión: es la implementación “Solo yo”. Usá la de acceso “Cualquier persona” (o cambiá el acceso de esa implementación a “Cualquier persona”).' });
+  let texto = '';
+  try { texto = code === 302 && loc ? UrlFetchApp.fetch(loc, { muteHttpExceptions: true }).getContentText().slice(0, 300) : r.getContentText().slice(0, 300); } catch (e) { }
+  Utilities.sleep(1500);
+  const filas = body_('Notificaciones');
+  const llego = filas.some(function (f) { return String(f[4]).indexOf(marca) > -1; });
+  if (llego) return JSON.stringify({ ok: true, msg: 'El receptor funciona: el aviso de prueba llegó a la planilla.' });
+  if (/clave incorrecta/.test(texto)) return JSON.stringify({ ok: false, msg: 'El receptor respondió “clave incorrecta”: la implementación “Cualquier persona” usa otra planilla o una versión vieja. Editala y elegí “Nueva versión”.' });
+  return JSON.stringify({ ok: false, msg: 'El receptor respondió (' + code + ') pero el aviso no llegó a la planilla. Respuesta: ' + (texto.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200) || 'vacía') + '. Editá la implementación “Cualquier persona” y elegí “Nueva versión”.' });
+}
 function guardarUrlReceptor(u) { dueno_(); return withLock_(function () { setConfig_('url_receptor', String(u || '').trim()); return 'ok'; }); }
 
 /* ---------- actualización automática ---------- */
@@ -590,7 +615,8 @@ function getData() {
   return JSON.stringify({ cfg: cfg, movs: movs, sheet: book_().getUrl(), notifs: notifs_(), reglas: leerReglas_(), token: token_(),
     fijos: leerFijos_(), difs: leerDifs_(), extras: leerExtras_(), app: infoVersion_(true), url: ScriptApp.getService().getUrl(),
     avisos: { gmail: getConfig_('leer_gmail') === 'si', gmailEstado: String(getConfig_('gmail_estado') || ''),
-      remitentes: String(getConfig_('remitentes_mail') || REMITENTES_DEF), receptor: String(getConfig_('url_receptor') || '') } });
+      remitentes: String(getConfig_('remitentes_mail') || REMITENTES_DEF), receptor: String(getConfig_('url_receptor') || ''),
+      ultimo: String(getConfig_('ultimo_aviso') || '') } });
 }
 /** Lo que necesita internet (BROU, GitHub, Gmail, Google): se pide después de mostrar la app, sin hacerla esperar. */
 function extrasCarga() {
@@ -891,6 +917,6 @@ var API_ = {
   saveCfg: saveCfg, importMovs: importMovs, borrarTodo: borrarTodo, asignarNotif: asignarNotif, estadoNotif: estadoNotif,
   borrarNotif: borrarNotif, saveReglas: saveReglas, probarNotif: probarNotif, reprocesar: reprocesar, cuotasNotif: cuotasNotif,
   saveFijos: saveFijos, guardarConciliacion: guardarConciliacion, estadoDif: estadoDif, setConfig: setConfig,
-  saveExtras: saveExtras, activarGmail: activarGmail, guardarUrlReceptor: guardarUrlReceptor,
+  saveExtras: saveExtras, activarGmail: activarGmail, guardarUrlReceptor: guardarUrlReceptor, probarReceptor: probarReceptor,
   buscarActualizacion: buscarActualizacion, actualizarApp: actualizarApp, autorizar: autorizar
 };

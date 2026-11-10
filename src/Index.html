@@ -1196,6 +1196,8 @@ function vNotifCfg(){
    </ol>
    <div class="xs mu">Dirección del receptor: ${AV.receptor?`<code class="tok">${h(AV.receptor)}</code> <button class="btn sm" onclick="copiar(${js(AV.receptor)})">Copiar</button>`:`<input type="text" id="av_url" placeholder="https://script.google.com/macros/s/…/exec (implementación con acceso Cualquier persona)" style="margin-top:4px"><button class="btn sm" style="margin-top:4px" onclick="guardarReceptor()">Guardar</button>`}</div>
    <div class="xs mu" style="margin-top:4px">Clave: <code class="tok">${h(S.token)}</code> <button class="btn sm" onclick="copiar(${js(S.token)})">Copiar</button></div>
+   <div class="sm" style="margin-top:10px">Último aviso recibido: <b>${h(AV.ultimo||'ninguno todavía')}</b></div>
+   ${AV.receptor?`<div class="btns" style="margin-top:8px"><button class="btn" id="btnPR" onclick="probarRec()">Probar el receptor</button><button class="btn sm" onclick="S.avisos.receptor='';render()">Cambiar dirección</button></div><div id="prOut" class="sm" style="margin-top:6px"></div>`:''}
    <div class="catH" style="margin-top:14px">Opciones</div>
    <div class="fld"><label>Preguntar en cuántas cuotas fue la compra</label><select onchange="S.cfg.preguntarCuotas=this.value;op('setConfig','preguntar_cuotas',this.value).catch(()=>{});toast('Guardado')">
      <option value="tc"${S.cfg.preguntarCuotas!=='todos'?' selected':''}>Solo en compras con tarjeta de crédito</option><option value="todos"${S.cfg.preguntarCuotas==='todos'?' selected':''}>En todos los gastos que entran solos</option></select></div>
@@ -1219,6 +1221,12 @@ async function activarMail(si,rem){
   await op('activarGmail',si,rem==null?null:rem).catch(()=>{});
   toast(si?'Listo: desde ahora la app lee los mails de tus bancos':'Lectura de mails desactivada');
   if(si)load();
+}
+async function probarRec(){
+  const b=document.getElementById('btnPR'),o=document.getElementById('prOut');b.disabled=true;b.textContent='Probando…';
+  try{const r=JSON.parse(await call('probarReceptor'));o.innerHTML=`<span class="${r.ok?'pos':'neg'}">${r.ok?'✓ ':'✗ '}${h(r.msg)}</span>`;toast(r.ok?'El receptor funciona':'El receptor tiene un problema')}
+  catch(e){o.innerHTML='<span class="neg">'+h(e.message||e)+'</span>'}
+  b.disabled=false;b.textContent='Probar el receptor';
 }
 async function guardarReceptor(){const u=document.getElementById('av_url').value.trim();if(!/^https:\/\/script\.google\.com\//.test(u)){toast('Pegá la dirección que termina en /exec');return}
   S.avisos.receptor=u;await op('guardarUrlReceptor',u).catch(()=>{});render();toast('Guardado')}

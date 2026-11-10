@@ -55,10 +55,14 @@ public final class Sender {
             return;
         }
         new Thread(() -> {
-            boolean ok = post(url, body);
-            if (ok) {
-                log(c, canal + " " + app + ": enviado");
+            int r = post(url, body);
+            if (r == OK) {
+                log(c, canal + " " + app + ": enviado ✓");
                 reintentarCola(c, url);
+            } else if (r == PIDE_LOGIN) {
+                log(c, "✗ La dirección pide iniciar sesión: usá la implementación con acceso \"Cualquier persona\"");
+            } else if (r == RECHAZADO) {
+                log(c, "✗ El receptor no aceptó el aviso (clave o dirección incorrecta)");
             } else {
                 encolar(c, body);
                 log(c, canal + " " + app + ": sin conexión, se reintenta");
@@ -67,7 +71,9 @@ public final class Sender {
         }).start();
     }
 
-    static boolean post(String url, String body) {
+    static final int OK = 0, SIN_RED = 1, PIDE_LOGIN = 2, RECHAZADO = 3;
+
+    static int post(String url, String body) {
         HttpURLConnection con = null;
         try {
             con = (HttpURLConnection) new URL(url).openConnection();
@@ -80,10 +86,40 @@ public final class Sender {
             byte[] b = body.getBytes(StandardCharsets.UTF_8);
             try (OutputStream os = con.getOutputStream()) { os.write(b); }
             int code = con.getResponseCode();
-            // Apps Script responde 302 (redirección) cuando ya procesó el pedido
-            return code == 200 || code == 302 || code == 303;
+            if (code == 302 || code == 303 || code == 301) {
+                // Apps Script responde con una redirección a googleusercontent cuando ya guardó el aviso;
+                // si redirige a accounts.google.com es porque la dirección pide iniciar sesión.
+                String loc = con.getHeaderField("Location");
+                if (loc != null && (loc.contains("accounts.google.com") || loc.contains("ServiceLogin"))) return PIDE_LOGIN;
+                if (loc != null && loc.contains("googleusercontent.com")) {
+                    String resp = leer(loc);
+                    if (resp != null && resp.contains("clave incorrecta")) return RECHAZADO;
+                    return OK;
+                }
+                return RECHAZADO;
+            }
+            if (code == 200) return OK;
+            if (code == 401 || code == 403) return PIDE_LOGIN;
+            return code >= 500 ? SIN_RED : RECHAZADO;
         } catch (Exception e) {
-            return false;
+            return SIN_RED;
+        } finally {
+            if (con != null) con.disconnect();
+        }
+    }
+
+    static String leer(String url) {
+        HttpURLConnection con = null;
+        try {
+            con = (HttpURLConnection) new URL(url).openConnection();
+            con.setConnectTimeout(15000);
+            con.setReadTimeout(20000);
+            java.io.InputStream in = con.getInputStream();
+            byte[] buf = new byte[512];
+            int n = in.read(buf);
+            return n > 0 ? new String(buf, 0, n, StandardCharsets.UTF_8) : "";
+        } catch (Exception e) {
+            return null;
         } finally {
             if (con != null) con.disconnect();
         }
@@ -108,7 +144,7 @@ public final class Sender {
         }
         for (int i = 0; i < a.length(); i++) {
             String b = a.optString(i);
-            if (!post(url, b)) encolar(c, b);
+            if (post(url, b) == SIN_RED) encolar(c, b);
         }
     }
 
