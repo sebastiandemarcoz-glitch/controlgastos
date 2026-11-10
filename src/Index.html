@@ -79,7 +79,7 @@ header.top h1{font-size:22px;margin:0}
 select,input[type=text],input[type=date],input[type=number],input[type=search]{border:1px solid var(--ln);background:var(--bg);border-radius:10px;padding:9px 10px;width:100%;outline:none}
 select:focus,input:focus{border-color:var(--ac)}
 .seg{display:flex;background:var(--bg);border-radius:10px;padding:3px;gap:3px;border:1px solid var(--ln)}
-.seg button{flex:1;border:0;background:none;padding:7px 6px;border-radius:8px;cursor:pointer;font-weight:500;font-size:13.5px;color:var(--mu)}
+.seg button{flex:1;white-space:nowrap;border:0;background:none;padding:7px 6px;border-radius:8px;cursor:pointer;font-weight:500;font-size:13.5px;color:var(--mu)}
 .seg button.on{background:var(--card);color:var(--tx);box-shadow:var(--sh)}
 .seg button.on.G{color:var(--rojo)}.seg button.on.I{color:var(--verde)}.seg button.on.T{color:var(--azul)}.seg button.on.A{color:var(--amb)}
 .totals{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-top:10px;align-items:center}
@@ -586,8 +586,75 @@ function vInformes(){
    <div class="legend"><span><i style="background:var(--verde)"></i>Ingresos</span><span><i style="background:var(--rojo)"></i>Gastos</span></div>
    <div style="margin-top:10px">${ev.slice().reverse().map(e=>`<div class="kv sm"><span>${perLabel(e.m)}</span><span class="num"><span class="pos">${fmt(e.i,'UYU')}</span> · <span class="neg">${fmt(e.g,'UYU')}</span> · <b class="${e.i-e.g<0?'neg':'pos'}">${fmtS(e.i-e.g,'UYU')}</b></span></div>`).join('')}</div>
   </div>
-  ${vPromedios()}`;
+  ${vPromedios()}
+  ${vAnual()}`;
 }
+
+/* ---------- Comparación año a año ---------- */
+const COL_AN=['#0f8a6c','#2f6fd6','#c27c0e','#8e44ad','#d23c3c','#5d6b82'];
+function serieMes(ent,y,m){
+  const mm=y+'-'+p2(m);let g=0,i=0;
+  for(const x of S.movs){if(!x.f.startsWith(mm))continue;
+    if(x.t==='G'){if(ent==='G*'||ent==='E*'||(ent.startsWith('C|')&&catOf(x)===ent.slice(2))||(ent.startsWith('K|')&&x.k===ent.slice(2)))g+=toUYU(x.m,monOf(x.c))}
+    else if(x.t==='I'){if(ent==='I*'||ent==='E*'||(ent.startsWith('J|')&&x.k===ent.slice(2)))i+=toUYU(x.m,monOf(x.c))}}
+  return ent==='E*'?i-g:(ent==='I*'||ent.startsWith('J|'))?i:g;
+}
+function vAnual(){
+  const A=V.anual||(V.anual={ent:'G*',modo:'mes'});
+  const hoyYM=ym(hoy()),yAct=+hoyYM.slice(0,4),mAct=+hoyYM.slice(5,7);
+  const anios=[...new Set(S.movs.map(x=>+x.f.slice(0,4)))].filter(y=>y<=yAct).sort((a,b)=>b-a).slice(0,6);
+  if(!anios.length)return '';
+  const cats=[...new Set(S.movs.filter(x=>x.t==='G').map(catOf))].sort((a,b)=>a.localeCompare(b,'es'));
+  const cIng=[...new Set(S.movs.filter(x=>x.t==='I').map(x=>x.k))].sort((a,b)=>a.localeCompare(b,'es'));
+  const opts=[['I*','Ingresos (total)'],['G*','Gastos (total)'],['E*','Excedente (ingresos − gastos)']];
+  const sel=`<select onchange="V.anual.ent=this.value;render()" style="max-width:100%">
+    ${opts.map(([v,l])=>`<option value="${v}"${A.ent===v?' selected':''}>${l}</option>`).join('')}
+    <optgroup label="Categorías de gastos">${cats.map(c=>`<option value="${h('C|'+c)}"${A.ent==='C|'+c?' selected':''}>${h(c)}</option>`).join('')}</optgroup>
+    <optgroup label="Ingresos por concepto">${cIng.map(c=>`<option value="${h('J|'+c)}"${A.ent==='J|'+c?' selected':''}>${h(c)}</option>`).join('')}</optgroup></select>`;
+  // series: una por año, 12 meses (el año en curso hasta el mes actual)
+  const series=anios.map((y,ix)=>{const lim=y===yAct?mAct:12;let acc=0;
+    const v=[];for(let m=1;m<=12;m++){if(m>lim){v.push(null);continue}const x=serieMes(A.ent,y,m);acc+=x;v.push(A.modo==='acum'?acc:x)}
+    return {y,v,col:COL_AN[ix%COL_AN.length]}});
+  const anual=A.modo==='anio';
+  // vista por año: total de cada año (el actual: hasta hoy + proyección al cierre)
+  const barras=anios.slice().reverse().map(y=>{const lim=y===yAct?mAct:12;let t=0;for(let m=1;m<=lim;m++)t+=serieMes(A.ent,y,m);
+    return {y,t,proy:y===yAct&&lim<12?t/lim*12:t}});
+  const todos=anual?barras.flatMap(b=>[b.t,b.proy]):series.flatMap(s=>s.v).filter(v=>v!=null);
+  let mx=Math.max(0,...todos),mn=Math.min(0,...todos);if(mx===mn)mx=mn+1;
+  const paso=(()=>{const r=(mx-mn)/4,p=Math.pow(10,Math.floor(Math.log10(r)));return [1,2,2.5,5,10].map(k=>k*p).find(k=>k>=r)})();
+  mx=Math.ceil(mx/paso)*paso;mn=Math.floor(mn/paso)*paso;
+  const chico=window.innerWidth<600,W=chico?360:640,H=chico?230:250,L=chico?40:58,R=8,T=18,B=24,X=m=>L+(m-1)*(W-L-R)/11,Y=v=>T+(mx-v)*(H-T-B)/(mx-mn);
+  let grid='';for(let v=mn;v<=mx+0.001;v+=paso){grid+=`<line x1="${L}" x2="${W-R}" y1="${Y(v)}" y2="${Y(v)}" stroke="var(--ln)" ${v===0?'stroke-width="1.5"':''}/><text x="${L-5}" y="${Y(v)+4}" text-anchor="end" font-size="11" fill="var(--mu)">${abrev(v)}</text>`}
+  const nb=barras.length,bw=Math.min(70,(W-L-R)/nb*0.55),BX=i=>L+(i+0.5)*(W-L-R)/nb;
+  const ejeX=anual?barras.map((b,i)=>`<text x="${BX(i)}" y="${H-8}" text-anchor="middle" font-size="12" fill="var(--mu)">${b.y}</text>`).join('')
+    :MES3.map((m,i)=>`<text x="${X(i+1)}" y="${H-6}" text-anchor="middle" font-size="${chico?10:11}" fill="var(--mu)">${chico?m.charAt(0).toUpperCase():m}</text>`).join('');
+  const colAnio=y=>COL_AN[anios.indexOf(y)%COL_AN.length];
+  const barrasSvg=!anual?'':barras.map((b,i)=>{const x=BX(i)-bw/2,y0=Y(0),yt=Y(b.t),yp=Y(b.proy),c=colAnio(b.y);
+    const alto=Math.abs(y0-yt),altoP=Math.abs(yt-yp);
+    return (b.proy!==b.t?`<rect x="${x}" y="${Math.min(yt,yp)}" width="${bw}" height="${altoP}" fill="${c}" opacity=".28" rx="3"><title>${b.y}: proyección al cierre ${fmt0(b.proy)}</title></rect>`:'')+
+      `<rect x="${x}" y="${Math.min(y0,yt)}" width="${bw}" height="${Math.max(alto,1)}" fill="${c}" rx="3"><title>${b.y}: ${fmt0(b.t)}${b.proy!==b.t?' (hasta hoy)':''}</title></rect>`+
+      `<text x="${BX(i)}" y="${Math.min(yt,yp)-6}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--tx)">${abrev(b.proy!==b.t?b.proy:b.t)}</text>`}).join('');
+  const lineas=anual?barrasSvg:series.slice().reverse().map((s,ri)=>{const prin=s.y===anios[0];
+    const pts=s.v.map((v,i)=>v==null?null:[X(i+1),Y(v),v,i]).filter(Boolean);
+    if(!pts.length)return '';
+    return `<polyline fill="none" stroke="${s.col}" stroke-width="${prin?3:2}" stroke-linejoin="round" stroke-linecap="round" opacity="${prin?1:.75}" points="${pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}"/>`+
+      pts.map(p=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${prin?4:3}" fill="${s.col}"><title>${MESES[p[3]]} ${s.y}: ${fmt0(p[2])}</title></circle>`).join('')}).join('');
+  // tabla: total, promedio y variación contra el mismo período del año anterior
+  const tot=(y,hasta)=>{let t=0;for(let m=1;m<=hasta;m++)t+=serieMes(A.ent,y,m);return t};
+  const filas=anios.map((y,ix)=>{const hasta=y===yAct?mAct:12,t=tot(y,hasta),prev=anios.includes(y-1)?tot(y-1,hasta):null;
+    const vr=prev?((t-prev)/Math.abs(prev)*100):null;const malo=A.ent==='G*'||A.ent.startsWith('C|')?vr>0:vr<0;
+    return `<tr><td><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${series[ix].col};margin-right:6px"></span>${y}${y===yAct?` <span class="xs mu">(ene–${MES3[mAct-1]})</span>`:''}</td>
+      <td class="num">${fmt0(t)}</td><td class="num disp">${fmt0(t/hasta)}</td><td class="num ${vr==null?'mu':malo?'neg':'pos'}">${vr==null?'—':(vr>0?'+':'')+Math.round(vr)+'%'}</td></tr>`}).join('');
+  return `<div class="card"><h2>Comparación año a año</h2>
+   <div class="filters" style="margin-top:0">${sel}
+    <div class="seg" style="flex:0 0 auto"><button class="${A.modo==='mes'?'on':''}" onclick="V.anual.modo='mes';render()">Por mes</button><button class="${A.modo==='acum'?'on':''}" onclick="V.anual.modo='acum';render()">Acumulado</button><button class="${A.modo==='anio'?'on':''}" onclick="V.anual.modo='anio';render()">Por año</button></div></div>
+   <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:10px" role="img" aria-label="Evolución por año">${grid}${ejeX}${lineas}</svg>
+   ${anual?(barras.some(b=>b.proy!==b.t)?`<div class="legend"><span><i style="background:${COL_AN[0]}"></i>Hasta hoy</span><span><i style="background:${COL_AN[0]};opacity:.28"></i>Proyección al cierre (promedio de los meses transcurridos)</span></div>`:''):`<div class="legend" style="flex-wrap:wrap">${series.map(s=>`<span><i style="background:${s.col}"></i>${s.y}</span>`).join('')}</div>`}
+   <table class="pr" style="margin-top:10px"><tr><th>Año</th><th>Total</th><th class="disp">Prom. mensual</th><th>Variación</th></tr>${filas}</table>
+   <div class="xs mu" style="margin-top:8px">La variación compara contra el mismo período del año anterior${anios.length<2?' (por ahora hay datos de un solo año: la comparación aparece cuando haya dos)':''}. Pasá el dedo o el mouse por un punto para ver el monto.</div>
+  </div>`;
+}
+function abrev(v){const a=Math.abs(v);const s=v<0?'−':'';return a>=1e6?s+(a/1e6).toFixed(a%1e6?1:0)+'M':a>=1e3?s+Math.round(a/1e3)+'k':s+Math.round(a)}
 
 /* ---------- Promedios mensuales del año ---------- */
 function vPromedios(){
