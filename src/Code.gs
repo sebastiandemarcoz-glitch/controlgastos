@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.4.3';
+const VERSION_APP = '5.5.0';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -21,7 +21,7 @@ const HDR = {
   Config: ['Clave', 'Valor'],
   Notificaciones: ['ID', 'Recibida', 'App', 'Título', 'Texto', 'Estado', 'Importe', 'Moneda', 'Comercio', 'Cuenta', 'Concepto', 'Movimiento', 'Tipo', 'Cuotas'],
   Reglas: ['Tipo', 'Palabra', 'Valor', 'App'],
-  PresupuestoAnual: ['ID', 'Nombre', 'Concepto', 'Mes', 'Año', 'Importe'],
+  PresupuestoAnual: ['ID', 'Nombre', 'Concepto', 'Mes', 'Año', 'Importe', 'Tipo'],
   Fijos: ['ID', 'Nombre', 'Tipo', 'Cuenta', 'Concepto', 'Importe', 'Día', 'Desde', 'Hasta', 'Activo', 'Último mes'],
   Conciliacion: ['ID', 'Estado de cuenta', 'Cuenta', 'Diferencia', 'Fecha', 'Descripción', 'Importe', 'Moneda', 'Movimiento', 'Importe app', 'Cuota', 'Estado', 'Creado']
 };
@@ -683,7 +683,7 @@ function saveCfg(json) {
       });
       writeBody_('Fijos', fj);
       const ex = body_('PresupuestoAnual');
-      ex.forEach(function (r) { if (rk['G|' + r[2]] != null) r[2] = rk['G|' + r[2]]; });
+      ex.forEach(function (r) { const t = /^ing/i.test(String(r[6])) ? 'I' : 'G'; if (rk[t + '|' + r[2]] != null) r[2] = rk[t + '|' + r[2]]; });
       writeBody_('PresupuestoAnual', ex);
     }
     return 'ok';
@@ -897,14 +897,14 @@ function estadoDif(id, estado) {
 /* ---------- gastos anuales previstos (presupuesto puntual por mes) ---------- */
 function leerExtras_() {
   return body_('PresupuestoAnual').filter(function (r) { return String(r[0]) && String(r[2]); }).map(function (r) {
-    return { id: String(r[0]), n: String(r[1]), k: String(r[2]), mes: Number(r[3]) || 1, anio: Number(r[4]) || 0, m: num_(r[5]) };
+    return { id: String(r[0]), n: String(r[1]), k: String(r[2]), mes: Number(r[3]) || 1, anio: Number(r[4]) || 0, m: num_(r[5]), t: /^ing/i.test(String(r[6])) ? 'I' : 'G' };
   });
 }
 function saveExtras(json) {
   dueno_();
   const list = JSON.parse(json);
   return withLock_(function () {
-    writeBody_('PresupuestoAnual', list.map(function (x) { return [x.id, x.n, x.k, x.mes, x.anio || '', x.m]; }));
+    writeBody_('PresupuestoAnual', list.map(function (x) { return [x.id, x.n, x.k, x.mes, x.anio || '', x.m, x.t === 'I' ? 'Ingreso' : 'Gasto']; }));
     return 'ok';
   });
 }

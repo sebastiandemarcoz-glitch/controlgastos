@@ -639,7 +639,7 @@ function saveConcepto(){
   if(!mv&&n!==old&&con(tipo,n)){toast('Ya existe ese concepto');return}
   if(old){
     const to=mv||n;
-    if(to!==old){ren.k={[tipo+'|'+old]:to};for(const x of S.movs)if(x.t===tipo&&x.k===old)x.k=to;if(tipo==='G')(S.extras||[]).forEach(e=>{if(e.k===old)e.k=to})}
+    if(to!==old){ren.k={[tipo+'|'+old]:to};for(const x of S.movs)if(x.t===tipo&&x.k===old)x.k=to;(S.extras||[]).forEach(e=>{if(e.k===old&&(e.t||'G')===tipo)e.k=to})}
     if(mv)S.cfg.conceptos=S.cfg.conceptos.filter(c=>!(c.tipo===tipo&&c.n===old));
     else Object.assign(con(tipo,old),{n,cat});
   }else S.cfg.conceptos.push({n,tipo,cat});
@@ -747,114 +747,156 @@ async function reprocesar(silencioso){
 
 /* ---------- Presupuesto ---------- */
 function sem(p){p=Math.round(p);return p<=75?'v':p<=100?'a':'r'}
-function barra(gas,pres){
-  if(!pres)return '';
-  const p=gas/pres*100;
-  return `<div class="gb sem-${sem(p)}${p>=100?' full':''}" style="width:${Math.min(100,p).toFixed(1)}%"></div>`;
-}
+/* en ingresos el semáforo va al revés: llegar al 100% es lo bueno */
+function semT(p,t){if(t!=='I')return sem(p);p=Math.round(p);return p>=100?'v':p>=75?'a':'r'}
 function pctTxt(gas,pres){if(!pres)return '';const p=gas/pres*100;return `<span class="tx-${sem(p)}">${Math.round(p)}%</span>`}
-function extrasMes(k,ymx){const y=+ymx.slice(0,4),m=+ymx.slice(5,7);return (S.extras||[]).filter(x=>x.k===k&&x.mes===m&&(!x.anio||x.anio===y))}
-function presMes(c,ymx){return (c.pres||0)+extrasMes(c.n,ymx).reduce((s,x)=>s+x.m,0)}
+function extrasMes(k,ymx,t){const y=+ymx.slice(0,4),m=+ymx.slice(5,7);t=t||'G';return (S.extras||[]).filter(x=>x.k===k&&(x.t||'G')===t&&x.mes===m&&(!x.anio||x.anio===y))}
+function presMes(c,ymx){return (c.pres||0)+extrasMes(c.n,ymx,c.tipo).reduce((s,x)=>s+x.m,0)}
 function presPeriodo(c,P){const y=P.per.slice(0,4),n=P.modo==='mes'?null:P.modo==='corriente'?+P.per.slice(5,7):12;
   if(!n)return presMes(c,P.per);let t=0;for(let i=1;i<=n;i++)t+=presMes(c,y+'-'+p2(i));return t}
-function gastosConcepto(filtro){const r={};for(const x of S.movs)if(x.t==='G'&&filtro(x)){r[x.k]=(r[x.k]||0)+toUYU(x.m,monOf(x.c))}return r}
+function movConcepto(t,filtro){const r={};for(const x of S.movs)if(x.t===t&&filtro(x)){r[x.k]=(r[x.k]||0)+toUYU(x.m,monOf(x.c))}return r}
+function gastosConcepto(filtro){return movConcepto('G',filtro)}
 function presResumen(mes){
   const g=gastosConcepto(x=>x.f.startsWith(mes));let pres=0,gas=0;
   for(const c of S.cfg.conceptos){if(c.tipo!=='G')continue;const p=presMes(c,mes);if(p>0){pres+=p;gas+=g[c.n]||0}}
   return {pres,gas};
 }
 function fmt0(v){const r=Math.round(v);return (r<0?'−':'')+'$ '+Math.abs(r).toLocaleString('es-UY')}
-function pctCelda(g,p){if(!p)return '<td class="pct mu">—</td>';const x=g/p*100;return `<td class="pct tx-${sem(x)}">${Math.round(x)}%</td>`}
+function pctCelda(g,p,t){if(!p)return '<td class="pct mu">—</td>';const x=g/p*100;return `<td class="pct tx-${semT(x,t)}">${Math.round(x)}%</td>`}
 function vPresupuesto(){
-  const P=V.pres||(V.pres={per:ym(hoy()),modo:'mes',edit:false});
-  const y=P.per.slice(0,4),mesN=+P.per.slice(5,7);
+  const P=V.pres||(V.pres={per:ym(hoy()),modo:'mes',edit:false,tipo:'G'});
+  P.tipo=P.tipo||'G';
+  const y=P.per.slice(0,4),mesN=+P.per.slice(5,7),t=P.tipo;
+  const tabs=`<div class="seg" style="margin-bottom:12px">${[['G','Gastos'],['I','Ingresos'],['R','Excedente']].map(([k,l])=>`<button class="${t===k?'on '+(k==='R'?'':k):''}" onclick="V.pres.tipo='${k}';V.pres.edit=false;render()">${l}</button>`).join('')}</div>`;
+  if(t==='R')return tabs+vExcedente(P);
   const fil=P.modo==='mes'?(x=>x.f.startsWith(P.per)):P.modo==='corriente'?(x=>x.f.startsWith(y)&&x.f.slice(0,7)<=P.per):(x=>x.f.startsWith(y));
-  const gas=gastosConcepto(fil);
+  const gas=movConcepto(t,fil);
   const per=P.modo==='mes'?P.per:y;
-  const cab=`<div class="card">
+  const G=t==='G';
+  const cab=`${tabs}<div class="card">
    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     ${pnav('V.pres.per',P.per)}
     <div class="seg">${[['mes','Mes'],['corriente','Al corriente'],['anio','Año']].map(([k,l])=>`<button class="${P.modo===k?'on':''}" onclick="V.pres.modo='${k}';render()">${l}</button>`).join('')}</div>
    </div>
-   <div class="xs mu" style="margin-top:8px">${P.modo==='mes'?'Gastos del mes contra el presupuesto del mes.':P.modo==='corriente'?`De enero a ${MESES[mesN-1]}.`:`Todo ${y}.`}
-    Avance: <b class="tx-v">verde</b> hasta 75% · <b class="tx-a">amarillo</b> 76–100% · <b class="tx-r">rojo</b> más de 100%.</div>
+   <div class="xs mu" style="margin-top:8px">${P.modo==='mes'?(G?'Gastos':'Ingresos')+' del mes contra lo presupuestado.':P.modo==='corriente'?`De enero a ${MESES[mesN-1]}.`:`Todo ${y}.`}
+    ${G?'Avance: <b class="tx-v">verde</b> hasta 75% · <b class="tx-a">amarillo</b> 76–100% · <b class="tx-r">rojo</b> más de 100%.':'Cobrado: <b class="tx-v">verde</b> 100% o más · <b class="tx-a">amarillo</b> 75–99% · <b class="tx-r">rojo</b> menos de 75%.'}</div>
   </div>`;
   if(P.edit){
-    const cats={};for(const c of S.cfg.conceptos.filter(c=>c.tipo==='G'))(cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push(c);
-    return cab+`<div class="card"><h2>Presupuesto mensual por concepto</h2>
-     <p class="sm mu" style="margin-top:0">Poné cuánto querés gastar por mes en cada concepto (en pesos). Dejalo vacío si no lo querés controlar.</p>
-     <table class="pr ed">${Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es')).map(cat=>`<tr class="cat"><td colspan="2">${h(cat)}</td></tr>`+sortN(cats[cat]).map(c=>`<tr><td>${h(c.n)}</td><td><input type="text" inputmode="decimal" data-con="${h(c.n)}" value="${c.pres?String(c.pres).replace('.',','):''}" placeholder="0"></td></tr>`).join('')).join('')}</table>
-     <div class="btns" style="justify-content:flex-end;margin-top:10px"><button class="btn" onclick="V.pres.edit=false;render()">Cancelar</button><button class="btn pri" onclick="guardarPres()">Guardar</button></div></div>`+vExtras(P);
+    const cats={};for(const c of S.cfg.conceptos.filter(c=>c.tipo===t))(cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push(c);
+    return cab+`<div class="card"><h2>${G?'Gasto':'Ingreso'} mensual previsto por concepto</h2>
+     <p class="sm mu" style="margin-top:0">${G?'Poné cuánto querés gastar por mes en cada concepto':'Poné cuánto esperás cobrar por mes en cada concepto (sueldo, alquileres…)'} en pesos. Dejalo vacío si no lo querés controlar.</p>
+     <table class="pr ed">${Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es')).map(cat=>`<tr class="cat"><td colspan="2">${h(cat)}</td></tr>`+sortN(cats[cat]).map(c=>`<tr><td>${h(c.n)}</td><td><input type="text" inputmode="decimal" data-con="${h(c.n)}" value="${c.pres?String(c.pres).replace('.',','):''}" placeholder="0"></td></tr>`).join('')).join('')||'<tr><td class="empty">No hay conceptos de este tipo. Agregalos en Ajustes.</td></tr>'}</table>
+     <div class="btns" style="justify-content:flex-end;margin-top:10px"><button class="btn" onclick="V.pres.edit=false;render()">Cancelar</button><button class="btn pri" onclick="guardarPres('${t}')">Guardar</button></div></div>`+vExtras(P);
   }
-  // conceptos con presupuesto (agrupados por categoría) y gastos sin presupuesto aparte
   const cats={},sin=[];
-  for(const c of S.cfg.conceptos.filter(c=>c.tipo==='G')){
+  for(const c of S.cfg.conceptos.filter(c=>c.tipo===t)){
     const g=gas[c.n]||0,pp=presPeriodo(c,P);
-    if(pp>0)(cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push({c,g,p:pp,ex:P.modo==='mes'?extrasMes(c.n,P.per):[]});
+    if(pp>0)(cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push({c,g,p:pp,ex:P.modo==='mes'?extrasMes(c.n,P.per,t):[]});
     else if(g>0.5)sin.push({c,g});
   }
   let TP=0,TG=0,filas='';
   for(const cat of Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es'))){
     const L=cats[cat].sort((a,b)=>b.p-a.p);
     const cp=L.reduce((s,r)=>s+r.p,0),cg=L.reduce((s,r)=>s+r.g,0);TP+=cp;TG+=cg;
-    if(L.length>1)filas+=`<tr class="cat"><td>${h(cat)}</td><td class="num">${fmt0(cp)}</td><td class="num">${fmt0(cg)}</td>${pctCelda(cg,cp)}<td class="disp num ${cp-cg<0?'neg':''}">${fmt0(cp-cg)}</td></tr>`;
-    for(const r of L)filas+=`<tr class="${L.length>1?'sub':'cat1'}" onclick="filtrar({k:${js('G|'+r.c.n)}},'${per}')"><td>${h(r.c.n)}${L.length===1&&norm(cat)!==norm(r.c.n)?`<div class="xs mu">${h(cat)}</div>`:''}${r.ex.length?`<div class="xs mu">incluye ${r.ex.map(x=>h(x.n)).join(', ')}</div>`:''}</td>
-      <td class="num">${fmt0(r.p)}</td><td class="num">${fmt0(r.g)}</td>${pctCelda(r.g,r.p)}<td class="disp num ${r.p-r.g<0?'neg':''}">${fmt0(r.p-r.g)}</td></tr>`;
+    const dif=v=>G?v:-v;
+    if(L.length>1)filas+=`<tr class="cat"><td>${h(cat)}</td><td class="num">${fmt0(cp)}</td><td class="num">${fmt0(cg)}</td>${pctCelda(cg,cp,t)}<td class="disp num ${dif(cp-cg)<0&&G?'neg':''}">${fmt0(cp-cg)}</td></tr>`;
+    for(const r of L)filas+=`<tr class="${L.length>1?'sub':'cat1'}" onclick="filtrar({k:${js(t+'|'+r.c.n)}},'${per}')"><td>${h(r.c.n)}${L.length===1&&norm(cat)!==norm(r.c.n)?`<div class="xs mu">${h(cat)}</div>`:''}${r.ex.length?`<div class="xs mu">incluye ${r.ex.map(x=>h(x.n)).join(', ')}</div>`:''}</td>
+      <td class="num">${fmt0(r.p)}</td><td class="num">${fmt0(r.g)}</td>${pctCelda(r.g,r.p,t)}<td class="disp num ${G&&r.p-r.g<0?'neg':''}">${fmt0(r.p-r.g)}</td></tr>`;
   }
   const totSin=sin.reduce((s,r)=>s+r.g,0);
+  const L1=G?['Presupuesto','Gastado','Disponible']:['Previsto','Cobrado','Falta cobrar'];
   return cab+`<div class="card">
-   <h2>Ejecución del presupuesto <button class="btn sm" onclick="V.pres.edit=true;render()">Editar</button></h2>
-   ${TP?`<div class="resumen"><div><div class="xs mu">Presupuesto</div><b class="num">${fmt0(TP)}</b></div><div><div class="xs mu">Gastado</div><b class="num">${fmt0(TG)}</b></div>
-     <div><div class="xs mu">Avance</div><b class="num tx-${sem(TG/TP*100)}" style="font-size:20px">${Math.round(TG/TP*100)}%</b></div><div><div class="xs mu">Disponible</div><b class="num ${TP-TG<0?'neg':''}">${fmt0(TP-TG)}</b></div></div>
-   <table class="pr"><tr><th>Concepto</th><th>Presup.</th><th>Gastado</th><th>%</th><th class="disp">Disponible</th></tr>${filas}</table>`
-   :`<div class="empty">Todavía no cargaste presupuestos.<br><button class="btn pri" style="margin-top:10px" onclick="V.pres.edit=true;render()">Cargar presupuestos</button></div>`}
-   ${sin.length?`<details class="sinp"><summary><span>Gastos sin presupuesto (${sin.length})</span><b class="num">${fmt0(totSin)}</b></summary>
-     <table class="pr">${sin.sort((a,b)=>b.g-a.g).map(r=>`<tr class="sub" onclick="filtrar({k:${js('G|'+r.c.n)}},'${per}')"><td>${h(r.c.n)}<div class="xs mu">${h(r.c.cat||'')}</div></td><td class="num">${fmt0(r.g)}</td></tr>`).join('')}</table></details>`:''}
+   <h2>${G?'Ejecución del presupuesto':'Ingresos previstos y cobrados'} <button class="btn sm" onclick="V.pres.edit=true;render()">Editar</button></h2>
+   ${TP?`<div class="resumen"><div><div class="xs mu">${L1[0]}</div><b class="num">${fmt0(TP)}</b></div><div><div class="xs mu">${L1[1]}</div><b class="num">${fmt0(TG)}</b></div>
+     <div><div class="xs mu">Avance</div><b class="num tx-${semT(TG/TP*100,t)}" style="font-size:20px">${Math.round(TG/TP*100)}%</b></div><div><div class="xs mu">${L1[2]}</div><b class="num ${G&&TP-TG<0?'neg':''}">${fmt0(G?TP-TG:Math.max(0,TP-TG))}</b></div></div>
+   <table class="pr"><tr><th>Concepto</th><th>${G?'Presup.':'Previsto'}</th><th>${G?'Gastado':'Cobrado'}</th><th>%</th><th class="disp">${G?'Disponible':'Diferencia'}</th></tr>${filas}</table>`
+   :`<div class="empty">Todavía no cargaste ${G?'presupuestos de gastos':'ingresos previstos'}.<br><button class="btn pri" style="margin-top:10px" onclick="V.pres.edit=true;render()">${G?'Cargar presupuestos':'Cargar ingresos previstos'}</button></div>`}
+   ${sin.length?`<details class="sinp"><summary><span>${G?'Gastos':'Ingresos'} sin presupuesto (${sin.length})</span><b class="num">${fmt0(totSin)}</b></summary>
+     <table class="pr">${sin.sort((a,b)=>b.g-a.g).map(r=>`<tr class="sub" onclick="filtrar({k:${js(t+'|'+r.c.n)}},'${per}')"><td>${h(r.c.n)}<div class="xs mu">${h(r.c.cat||'')}</div></td><td class="num">${fmt0(r.g)}</td></tr>`).join('')}</table></details>`:''}
    <div class="xs mu" style="margin-top:8px">En pesos; dólares a $ ${NF.format(cot())}. Tocá un concepto para ver sus movimientos.</div>
   </div>
   ${vExtras(P)}`;
 }
+/* ---------- Excedente: ingresos previstos − gastos previstos, mes a mes ---------- */
+function vExcedente(P){
+  const y=P.per.slice(0,4),actual=ym(hoy());
+  const CG=S.cfg.conceptos.filter(c=>c.tipo==='G'),CI=S.cfg.conceptos.filter(c=>c.tipo==='I');
+  let T={pi:0,pg:0,ri:0,rg:0,proy:0},filas='',hayPres=false;
+  for(let m=1;m<=12;m++){
+    const mm=y+'-'+p2(m);
+    const pi=CI.reduce((s,c)=>s+presMes(c,mm),0),pg=CG.reduce((s,c)=>s+presMes(c,mm),0);
+    const {g:rg,i:ri}=sumGI(S.movs.filter(x=>x.f.startsWith(mm)));
+    const pasado=mm<actual,esActual=mm===actual,futuro=mm>actual;
+    if(pi||pg)hayPres=true;
+    T.pi+=pi;T.pg+=pg;if(!futuro){T.ri+=ri;T.rg+=rg}
+    T.proy+=pasado?(ri-rg):esActual?Math.max(pi,ri)-Math.max(pg,rg):(pi-pg);
+    const ep=pi-pg,er=ri-rg;
+    filas+=`<tr class="${esActual?'cat':''}" onclick="V.pres.per='${mm}';V.pres.modo='mes';V.pres.tipo='G';render()"><td>${MESES[m-1].charAt(0).toUpperCase()+MESES[m-1].slice(1)}${esActual?' <span class="chip">hoy</span>':''}</td>
+      <td class="num disp">${fmt0(pi)}</td><td class="num disp">${fmt0(pg)}</td><td class="num ${ep<0?'neg':'pos'}"><b>${fmt0(ep)}</b></td>
+      <td class="num ${futuro?'mu':er<0?'neg':'pos'}">${futuro?'—':fmt0(er)}</td></tr>`;
+  }
+  const exP=T.pi-T.pg,exR=T.ri-T.rg;
+  const sinPresG=sumGI(S.movs.filter(x=>x.f.startsWith(y)&&x.t==='G'&&!(con('G',x.k)&&presMes(con('G',x.k),x.f.slice(0,7))>0))).g;
+  return `<div class="card">
+   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+    <div class="pnav"><button onclick="V.pres.per=perStep(V.pres.per.slice(0,4),-1)+'-12';render()">‹</button><b>Año ${y}</b><button onclick="V.pres.per=perStep(V.pres.per.slice(0,4),1)+'-01';render()">›</button></div>
+   </div>
+   <div class="resumen" style="margin-top:12px"><div><div class="xs mu">Ingresos previstos</div><b class="num">${fmt0(T.pi)}</b></div><div><div class="xs mu">Gastos previstos</div><b class="num">${fmt0(T.pg)}</b></div>
+    <div><div class="xs mu">Excedente previsto</div><b class="num ${exP<0?'neg':'pos'}" style="font-size:20px">${fmt0(exP)}</b></div>
+    <div><div class="xs mu">${y===actual.slice(0,4)?'Proyección al cierre':'Excedente real'}</div><b class="num ${(y===actual.slice(0,4)?T.proy:exR)<0?'neg':'pos'}" style="font-size:20px">${fmt0(y===actual.slice(0,4)?T.proy:exR)}</b></div></div>
+   ${y===actual.slice(0,4)?`<div class="sm" style="margin-bottom:8px">Excedente real hasta hoy: <b class="num ${exR<0?'neg':'pos'}">${fmt0(exR)}</b> <span class="mu xs">(ingresos ${fmt0(T.ri)} − gastos ${fmt0(T.rg)})</span></div>`:''}
+   ${hayPres?`<table class="pr"><tr><th>Mes</th><th class="disp">Ingresos prev.</th><th class="disp">Gastos prev.</th><th>Excedente prev.</th><th>Excedente real</th></tr>${filas}
+     <tr class="cat"><td>Total</td><td class="num disp">${fmt0(T.pi)}</td><td class="num disp">${fmt0(T.pg)}</td><td class="num ${exP<0?'neg':''}">${fmt0(exP)}</td><td class="num ${exR<0?'neg':''}">${fmt0(exR)}</td></tr></table>`
+   :`<div class="empty">Cargá los ingresos previstos (pestaña Ingresos) y el presupuesto de gastos (pestaña Gastos) para ver el excedente del año.</div>`}
+   <div class="xs mu" style="margin-top:8px">El previsto incluye los montos mensuales y los anuales (aguinaldo, patente…). El real incluye todos los movimientos.
+    ${sinPresG>0.5?` Este año hay <b>${fmt0(sinPresG)}</b> de gastos en conceptos sin presupuesto: si se repiten, conviene presupuestarlos para que el excedente previsto sea realista.`:''}
+    La proyección suma lo real de los meses pasados y lo previsto de los que faltan.</div>
+  </div>`;
+}
 function vExtras(P){
-  const L=[...(S.extras||[])].sort((a,b)=>a.mes-b.mes||a.n.localeCompare(b.n,'es'));
+  const t=P.tipo==='I'?'I':'G',G=t==='G';
+  const L=[...(S.extras||[])].filter(x=>(x.t||'G')===t).sort((a,b)=>a.mes-b.mes||a.n.localeCompare(b.n,'es'));
   const y=+P.per.slice(0,4);
   const tot=L.filter(x=>!x.anio||x.anio===y).reduce((s,x)=>s+x.m,0);
-  return `<div class="card"><h2>Gastos anuales previstos <button class="btn sm" onclick="openExtra()">+ Agregar</button></h2>
-   <p class="xs mu" style="margin-top:0">Gastos grandes que caen una vez al año en un mes fijo (patente, contribución, escolaridad…). Ese mes se suman al presupuesto de su concepto.</p>
-   ${L.length?L.map(x=>`<div class="row" onclick="openExtra(${js(x.id)})"><div class="ico G" style="font-size:11px">${MES3[x.mes-1]}</div><div class="mid"><div class="t1">${h(x.n)}</div>
+  return `<div class="card"><h2>${G?'Gastos':'Ingresos'} anuales previstos <button class="btn sm" onclick="openExtra(null,'${t}')">+ Agregar</button></h2>
+   <p class="xs mu" style="margin-top:0">${G?'Gastos grandes que caen una vez al año en un mes fijo (patente, contribución, escolaridad…).':'Ingresos que llegan en meses fijos (aguinaldo en junio y diciembre, salario vacacional…).'} Ese mes se suman a lo previsto de su concepto.</p>
+   ${L.length?L.map(x=>`<div class="row" onclick="openExtra(${js(x.id)})"><div class="ico ${t}" style="font-size:11px">${MES3[x.mes-1]}</div><div class="mid"><div class="t1">${h(x.n)}</div>
      <div class="t2">${h(x.k)} · ${x.anio?'solo '+x.anio:'todos los años'} · ${MESES[x.mes-1]}</div></div><div class="num">${fmt(x.m,'UYU')}</div></div>`).join('')
      +`<div class="kv" style="margin-top:6px"><b>Total previsto ${y}</b><b class="num">${fmt(tot,'UYU')}</b></div>`:'<div class="empty">Todavía no cargaste ninguno.</div>'}
   </div>`;
 }
-function openExtra(id){
-  const x=id?S.extras.find(e=>e.id===id):{n:'',k:'',mes:+hoy().slice(5,7),anio:0,m:''};
-  const conc=sortN(S.cfg.conceptos.filter(c=>c.tipo==='G'));
-  modal(`<h3>${id?'Editar':'Nuevo'} gasto anual previsto</h3><form onsubmit="event.preventDefault();guardarExtra(${js(id||'')})">
-   <div class="fld"><label>Nombre</label><input type="text" id="ex_n" value="${h(x.n)}" placeholder="Ej. Patente del auto, Contribución, Escolaridad" required></div>
+function openExtra(id,tipo){
+  const x=id?S.extras.find(e=>e.id===id):{n:'',k:'',mes:+hoy().slice(5,7),anio:0,m:'',t:tipo||'G'};
+  const t=x.t||'G',G=t==='G';
+  const conc=sortN(S.cfg.conceptos.filter(c=>c.tipo===t));
+  modal(`<h3>${id?'Editar':'Nuevo'} ${G?'gasto':'ingreso'} anual previsto</h3><form onsubmit="event.preventDefault();guardarExtra(${js(id||'')},'${t}')">
+   <div class="fld"><label>Nombre</label><input type="text" id="ex_n" value="${h(x.n)}" placeholder="${G?'Ej. Patente del auto, Contribución, Escolaridad':'Ej. Aguinaldo, Salario vacacional'}" required></div>
    <div class="fld2"><div class="fld"><label>Mes</label><select id="ex_mes">${MESES.map((m,i)=>`<option value="${i+1}"${i+1===x.mes?' selected':''}>${m}</option>`).join('')}</select></div>
    <div class="fld"><label>Monto ($)</label><input type="text" inputmode="decimal" id="ex_m" value="${x.m?String(x.m).replace('.',','):''}" required></div></div>
-   <div class="fld"><label>Concepto donde se va a gastar</label><input type="text" id="ex_k" list="dl_exk" value="${h(x.k)}" placeholder="Elegí o escribí uno nuevo" autocomplete="off" required>
+   <div class="fld"><label>Concepto</label><input type="text" id="ex_k" list="dl_exk" value="${h(x.k)}" placeholder="Elegí o escribí uno nuevo" autocomplete="off" required>
     <datalist id="dl_exk">${conc.map(c=>`<option value="${h(c.n)}">`).join('')}</datalist>
-    <div class="xs mu" style="margin-top:3px">Si escribís un concepto que no existe (ej. “Escolaridad”), se crea en la categoría “Gastos anuales”.</div></div>
+    <div class="xs mu" style="margin-top:3px">Si escribís un concepto que no existe (ej. “${G?'Escolaridad':'Aguinaldo'}”), se crea en la categoría “${G?'Gastos':'Ingresos'} anuales”.</div></div>
    <div class="fld"><label>Se repite</label><select id="ex_a"><option value="0"${!x.anio?' selected':''}>Todos los años</option>${[0,1,2].map(d=>{const a=+hoy().slice(0,4)+d;return `<option value="${a}"${x.anio===a?' selected':''}>Solo en ${a}</option>`}).join('')}</select></div>
    <div class="btns" style="justify-content:space-between"><div>${id?`<button type="button" class="btn dan" onclick="borrarExtra(${js(id)})">Eliminar</button>`:''}</div>
    <div class="btns"><button type="button" class="btn" onclick="closeModal()">Cancelar</button><button class="btn pri">Guardar</button></div></div></form>`);
   setTimeout(()=>document.getElementById('ex_n').focus(),50);
 }
-function guardarExtra(id){
+function guardarExtra(id,t){
+  t=t||'G';
   const g=i=>document.getElementById(i).value;
-  const x={id:id||uid(),n:g('ex_n').trim(),k:g('ex_k').trim(),mes:+g('ex_mes'),anio:+g('ex_a')||0,m:r2(Math.abs(parseNum(g('ex_m'))))};
+  const x={id:id||uid(),n:g('ex_n').trim(),k:g('ex_k').trim(),mes:+g('ex_mes'),anio:+g('ex_a')||0,m:r2(Math.abs(parseNum(g('ex_m')))),t};
   if(!x.n||!x.k||!(x.m>0)){toast('Completá nombre, concepto y monto');return}
-  const ex=S.cfg.conceptos.find(c=>c.tipo==='G'&&norm(c.n)===norm(x.k));
-  if(ex)x.k=ex.n;else{S.cfg.conceptos.push({n:x.k,tipo:'G',cat:'Gastos anuales'});invalidate();saveCfg()}
+  const ex=S.cfg.conceptos.find(c=>c.tipo===t&&norm(c.n)===norm(x.k));
+  if(ex)x.k=ex.n;else{S.cfg.conceptos.push({n:x.k,tipo:t,cat:t==='G'?'Gastos anuales':'Ingresos anuales'});invalidate();saveCfg()}
   S.extras=(S.extras||[]).filter(e=>e.id!==x.id);S.extras.push(x);
   op('saveExtras',JSON.stringify(S.extras)).catch(()=>{});closeModal();render();toast('Guardado');
 }
-function borrarExtra(id){confirmar('¿Eliminar este gasto anual previsto?',()=>{S.extras=S.extras.filter(e=>e.id!==id);op('saveExtras',JSON.stringify(S.extras)).catch(()=>{});closeModal();render()})}
-function celda(g,p){return `<div class="gcell">${barra(g,p)}<span class="num">${fmt(g,'UYU')}</span>${p?`<small>${pctTxt(g,p)}</small>`:''}</div>`}
+function borrarExtra(id){confirmar('¿Eliminar este monto anual previsto?',()=>{S.extras=S.extras.filter(e=>e.id!==id);op('saveExtras',JSON.stringify(S.extras)).catch(()=>{});closeModal();render()})}
 function dispTxt(v){return `<span class="num ${v<0?'neg':''}">${fmtS(v,'UYU')}</span>`}
-function guardarPres(){
-  document.querySelectorAll('input[data-con]').forEach(i=>{const c=con('G',i.dataset.con);if(c)c.pres=r2(parseNum(i.value)||0)});
-  V.pres.edit=false;saveCfg();render();toast('Presupuestos guardados');
+function guardarPres(t){
+  t=t||'G';
+  document.querySelectorAll('input[data-con]').forEach(i=>{const c=con(t,i.dataset.con);if(c)c.pres=r2(parseNum(i.value)||0)});
+  V.pres.edit=false;saveCfg();render();toast('Guardado');
 }
 
 /* ---------- Más (celular) ---------- */
