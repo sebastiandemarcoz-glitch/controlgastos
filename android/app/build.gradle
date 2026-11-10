@@ -1,0 +1,28 @@
+plugins { id 'com.android.application' }
+android {
+    namespace 'uy.cg.avisos'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'uy.cg.avisos'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+    signingConfigs {
+        fija {
+            storeFile file('avisos.keystore')
+            storePassword 'avisos2026'
+            keyAlias 'avisos'
+            keyPassword 'avisos2026'
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig signingConfigs.fija }
+        debug { signingConfig signingConfigs.fija }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
