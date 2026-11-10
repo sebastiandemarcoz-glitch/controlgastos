@@ -1,1 +1,1 @@
-{"version":"5.4.1","notas":"Si la app no puede abrir, muestra el motivo en pantalla."}
+{"version":"5.4.2","notas":"Arreglo: la app quedaba en Cargando porque Google alteraba el código de la pantalla."}
