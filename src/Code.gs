@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.5.6';
+const VERSION_APP = '5.5.7';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -292,8 +292,9 @@ function parseNotif_(app, titulo, texto) {
   if (/acredit|recibiste|te transfiri|transferencia recibida|deposito|reintegro|devolucion|cobraste/.test(n)) p.tipo = 'I';
   if (/pago (de |a )?(tu |la )?tarjeta|pago tarjeta|pagaste tu tarjeta|transferencia (enviada|realizada)|transferiste/.test(n)) p.tipo = 'T';
   // "Comercio: 033GRANJA TRES ARROYOS VIS3 Tipo: Compra": se corta en la etiqueta siguiente y se saca el código numérico de adelante
-  const cm = full.match(/comercio:?\s*(.+?)(?=\s+[A-Za-zÁÉÍÓÚáéíóúñ]+\s*:|[.,;](?:\s|$)|$)/i);
+  let cm = full.match(/comercio:?\s*(.+?)(?=\s+[A-Za-zÁÉÍÓÚáéíóúñ]+\s*:|[.,;](?:\s|$)|$)/i);
   if (cm) p.comercio = cm[1].trim().replace(/^\d+\s*(?=[A-Za-z])/, '');
+  else if ((cm = full.match(/\bsu\s+(.+?)\s+ejecutad[oa]/i))) p.comercio = cm[1].replace(/\s+/g, ' ').trim().slice(0, 40);   // eBROU: "Su Pago de Servicios TSANTANDER EJECUTADO/A en eBROU"
   else {
     const re = /\ben\s+(.+?)(?=\s+(?:con|por|en|el dia|el d[ií]a|el\s+\d+|a las|desde|usando|mediante|fue|ha sido|hoy|aprobad[ao]|autorizad[ao]|realizad[ao]|exitosa)\b|[,;]|\.\s|\.$|$)/gi;
     let x;
@@ -357,13 +358,13 @@ function resolver_(p, cfg, reglas) {
   return p;
 }
 function heuristica_(p, cfg) {
-  const T = palabras_(p.app + ' ' + p.texto);
+  const T = palabras_(p.app + ' ' + p.texto).replace(/ ebrou /g, ' ebrou brou ');
   const banco = BANCOS.filter(function (b) { return T.indexOf(' ' + b + ' ') > -1; })[0];
   if (!banco) return '';
   let c = cfg.cuentas.filter(function (a) { return !a.arch && a.mon === p.mon && palabras_(a.n).indexOf(' ' + banco + ' ') > -1; });
   if (c.length > 1) {
     const n = normTxt_(p.texto);
-    if (/debito|caja de ahorro|cuenta corriente|\btdd\b/.test(n)) c = c.filter(function (a) { return /^ca\b|caja/i.test(normTxt_(a.n)); });
+    if (/debito|caja de ahorro|cuenta corriente|\btdd\b|ejecutad[oa] en ebrou/.test(n)) c = c.filter(function (a) { return /^ca\b|caja/i.test(normTxt_(a.n)); });
     else if (/credito|visa|master|recompensa|\btdc\b|tarjeta/.test(n)) c = c.filter(function (a) { return /^tc\b|tarjeta/i.test(normTxt_(a.n)); });
   }
   return c.length === 1 ? c[0].n : '';
