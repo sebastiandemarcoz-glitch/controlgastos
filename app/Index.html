@@ -240,7 +240,7 @@ function sortN(a){return [...a].sort((x,y)=>x.n.localeCompare(y.n,'es'))}
 
 /* ===================== Servidor (Google Sheet) ===================== */
 let chain=Promise.resolve(),pend=0;
-function call(fn,...a){return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej)[fn](...a))}
+function call(fn,...a){return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej).rpc(fn,JSON.stringify(a)))}
 function setSync(){
   const el=document.getElementById('sync');
   el.textContent=pend?'Guardando…':S.ready?'✓ Guardado en Google Sheets ⟳':'Conectando…';

@@ -1,5 +1,5 @@
 /**
- * Control de Gastos — servidor (Google Apps Script)
+ * Control de Gastos — lógica de la app (la baja y ejecuta el Cargador.gs desde GitHub).
  * Los datos se guardan en este mismo Google Sheet, en las pestañas:
  *   Movimientos · Cuentas · Conceptos · Config · Notificaciones · Reglas
  * Las pestañas se crean solas la primera vez que se abre la app.
@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.3.2';
+const VERSION_APP = '5.4.0';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -43,14 +43,8 @@ const REGLAS_INICIALES = [
 const BANCOS = ['brou', 'bbva', 'santander', 'itau', 'scotiabank', 'scotia', 'hsbc', 'oca', 'prex', 'midinero', 'bandes', 'heritage', 'citibank'];
 
 /* ---------- entrada web ---------- */
-function doGet(e) {
-  if (!esDueno_() && !(e && e.parameter && e.parameter.k === token_())) {
-    return HtmlService.createHtmlOutput('<p style="font-family:sans-serif">Acceso no autorizado.</p>');
-  }
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Control de Gastos')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
-}
+/** La pantalla solo se muestra al dueño (o con la clave). La arma el Cargador. */
+function puedeVer(e) { return esDueno_() || !!(e && e.parameter && e.parameter.k === token_()); }
 
 /** Recibe notificaciones desde el celular (MacroDroid u otra app). */
 function doPost(e) {
@@ -486,19 +480,7 @@ function activarGmail(si, remitentes) {
 function autorizar() { GmailApp.getInboxUnreadCount(); return 'ok'; }
 
 /* ---------- dirección del receptor (para configurar la app de Android) ---------- */
-function urlReceptor_() {
-  const guardada = String(getConfig_('url_receptor') || '');
-  if (guardada) return guardada;
-  try {
-    const deps = api_('get', '/deployments').deployments || [];
-    for (let i = 0; i < deps.length; i++) {
-      const web = (deps[i].entryPoints || []).filter(function (e) { return e.entryPointType === 'WEB_APP'; })[0];
-      const cfg = web && web.webApp && web.webApp.entryPointConfig;
-      if (cfg && cfg.access === 'ANYONE_ANONYMOUS' && web.webApp.url) { setConfig_('url_receptor', web.webApp.url); return web.webApp.url; }
-    }
-  } catch (e) { /* sin API: se carga a mano */ }
-  return '';
-}
+function urlReceptor_() { return String(getConfig_('url_receptor') || ''); }
 function guardarUrlReceptor(u) { dueno_(); return withLock_(function () { setConfig_('url_receptor', String(u || '').trim()); return 'ok'; }); }
 
 /* ---------- actualización automática ---------- */
@@ -520,74 +502,31 @@ function versionRemota_(sinCache) {
   c.put('verRemota', JSON.stringify(o), o && o.version ? 3600 : 60);
   return o;
 }
-function api_(metodo, ruta, cuerpo) {
-  const r = UrlFetchApp.fetch('https://script.googleapis.com/v1/projects/' + ScriptApp.getScriptId() + ruta, {
-    method: metodo, contentType: 'application/json', muteHttpExceptions: true,
-    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
-    payload: cuerpo ? JSON.stringify(cuerpo) : undefined
-  });
-  const txt = r.getContentText();
-  if (r.getResponseCode() >= 300) {
-    if (/has not been used|is disabled|SERVICE_DISABLED|User has not enabled the Apps Script API/i.test(txt))
-      throw new Error('Falta activar la “API de Google Apps Script” en script.google.com/home/usersettings');
-    if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(txt))
-      throw new Error('Faltan permisos: en Apps Script mostrá el archivo appsscript.json, pegale el contenido del archivo appsscript.json y volvé a autorizar');
-    throw new Error('Google respondió ' + r.getResponseCode() + ': ' + txt.slice(0, 300));
-  }
-  return txt ? JSON.parse(txt) : {};
-}
-function actualizar_() {
-  const rem = versionRemota_(true);
-  if (!rem || !rem.version) throw new Error('No pude leer la versión publicada en GitHub');
-  if (cmpVer_(rem.version, VERSION_APP) <= 0) return { ok: true, version: VERSION_APP, nada: true };
-  const bajar = function (f) {
-    const r = UrlFetchApp.fetch(RAW + f + '?t=' + Date.now(), { muteHttpExceptions: true });
-    if (r.getResponseCode() !== 200) throw new Error('No pude bajar ' + f);
-    return r.getContentText();
-  };
-  const files = [
-    { name: 'appsscript', type: 'JSON', source: bajar('appsscript.json') },
-    { name: 'Code', type: 'SERVER_JS', source: bajar('Code.gs') },
-    { name: 'Index', type: 'HTML', source: bajar('Index.html') }
-  ];
-  if (files[1].source.indexOf("VERSION_APP = '" + rem.version + "'") < 0) throw new Error('Los archivos de GitHub no coinciden con la versión ' + rem.version);
-  api_('put', '/content', { files: files });
-  const ver = api_('post', '/versions', { description: 'Control de Gastos ' + rem.version });
-  // se actualizan solo las publicaciones de la app (acceso "solo yo"); el receptor queda como está
-  const deps = (api_('get', '/deployments').deployments || []);
-  let n = 0;
-  deps.forEach(function (d) {
-    if (!d.deploymentConfig || !d.deploymentConfig.versionNumber) return;
-    const web = (d.entryPoints || []).filter(function (e) { return e.entryPointType === 'WEB_APP'; })[0];
-    const acceso = web && web.webApp && web.webApp.entryPointConfig && web.webApp.entryPointConfig.access;
-    if (acceso && acceso !== 'MYSELF') return;
-    api_('put', '/deployments/' + d.deploymentId, { deploymentConfig: { scriptId: ScriptApp.getScriptId(), versionNumber: ver.versionNumber,
-      manifestFileName: 'appsscript', description: 'Control de Gastos ' + rem.version } });
-    n++;
-  });
-  setConfig_('ultima_actualizacion', Utilities.formatDate(new Date(), tz_(), 'dd/MM/yyyy HH:mm') + ' → ' + rem.version);
-  CacheService.getScriptCache().remove('verRemota');
-  return { ok: true, version: rem.version, publicaciones: n };
-}
-/** Botón "Actualizar" de la app. */
+/** Botón "Actualizar ahora": lo hace el Cargador (baja la versión nueva de GitHub y la guarda en la planilla). */
 function actualizarApp() {
   dueno_();
-  return JSON.stringify(withLock_(function () { return actualizar_(); }));
+  const r = cgActualizar_(true);
+  if (r.ok && !r.nada) {
+    setConfig_('ultima_actualizacion', Utilities.formatDate(new Date(), tz_(), 'dd/MM/yyyy HH:mm') + ' → ' + r.version);
+    setConfig_('error_actualizacion', '');
+  }
+  CacheService.getScriptCache().remove('verRemota');
+  return JSON.stringify(r);
 }
 function buscarActualizacion() { dueno_(); versionRemota_(true); return JSON.stringify(infoVersion_()); }
-/** Activador diario: instala sola la versión nueva si está activada la actualización automática. */
-function autoActualizar() {
-  if (getConfig_('auto_actualizar') === 'no') return;
-  try { withLock_(function () { actualizar_(); }); } catch (e) { setConfig_('error_actualizacion', String(e.message || e)); }
+function autoActualizarPermitido() { return getConfig_('auto_actualizar') !== 'no'; }
+function anotarActualizacion(version, error) {
+  if (error) setConfig_('error_actualizacion', error);
+  else { setConfig_('ultima_actualizacion', Utilities.formatDate(new Date(), tz_(), 'dd/MM/yyyy HH:mm') + ' → ' + version); setConfig_('error_actualizacion', ''); }
 }
 function instalarActivadores_() {
   const p = PropertiesService.getScriptProperties();
-  if (p.getProperty('ACTIVADORES') === '2') return;
+  if (p.getProperty('ACTIVADORES') === '3') return;
   try {
     const ex = ScriptApp.getProjectTriggers().map(function (t) { return t.getHandlerFunction(); });
     if (ex.indexOf('procesarNotificaciones') < 0) ScriptApp.newTrigger('procesarNotificaciones').timeBased().everyMinutes(5).create();
     if (ex.indexOf('autoActualizar') < 0) ScriptApp.newTrigger('autoActualizar').timeBased().everyDays(1).atHour(4).create();
-    p.setProperty('ACTIVADORES', '2');
+    p.setProperty('ACTIVADORES', '3');
   } catch (e) { /* se reintenta la próxima vez */ }
 }
 function esTarjeta_(n) { return /^tc\b|tarjeta|cr[eé]dito|visa|master|\boca\b|amex/i.test(String(n || '')); }
@@ -943,3 +882,15 @@ function saveExtras(json) {
     return 'ok';
   });
 }
+
+/* ---------- funciones que usa el Cargador ---------- */
+var API_ = {
+  puedeVer: puedeVer, doPost: doPost, procesarNotificaciones: procesarNotificaciones,
+  autoActualizarPermitido: autoActualizarPermitido, anotarActualizacion: anotarActualizacion,
+  getData: getData, extrasCarga: extrasCarga, saveMov: saveMov, deleteMov: deleteMov, deleteMovs: deleteMovs,
+  saveCfg: saveCfg, importMovs: importMovs, borrarTodo: borrarTodo, asignarNotif: asignarNotif, estadoNotif: estadoNotif,
+  borrarNotif: borrarNotif, saveReglas: saveReglas, probarNotif: probarNotif, reprocesar: reprocesar, cuotasNotif: cuotasNotif,
+  saveFijos: saveFijos, guardarConciliacion: guardarConciliacion, estadoDif: estadoDif, setConfig: setConfig,
+  saveExtras: saveExtras, activarGmail: activarGmail, guardarUrlReceptor: guardarUrlReceptor,
+  buscarActualizacion: buscarActualizacion, actualizarApp: actualizarApp, autorizar: autorizar
+};

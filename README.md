@@ -2,6 +2,9 @@
 
 App web personal de control de gastos (Google Apps Script + Google Sheets).
 
-La carpeta `app/` tiene la versión publicada. La app instalada revisa `app/version.json` todas las noches y, si hay una versión nueva, baja `Code.gs`, `Index.html` y `appsscript.json` y se actualiza sola.
+- `app/Cargador.gs`: el único archivo que va en Apps Script. Baja la app de esta carpeta y la guarda en la pestaña oculta `_app` de la planilla.
+- `app/Code.gs` e `app/Index.html`: la lógica y la pantalla de la app, que se actualizan solas.
+- `app/version.json`: la versión publicada. La app la revisa todas las noches.
+- `android/`: la app "Gastos · Avisos" para Android (SMS y notificaciones). La compila GitHub Actions y se publica en Releases.
 
-Este repositorio solo tiene código: los datos (movimientos, cuentas, saldos) y las claves quedan en el Google Sheet de cada usuario.
+Este repositorio solo tiene código: los datos y las claves quedan en el Google Sheet de cada usuario.
