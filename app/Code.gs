@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.2.0';
+const VERSION_APP = '5.3.0';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -396,6 +396,7 @@ function procesarNuevas_() {
         if (q[5] !== 'duplicada' && String(q[2]) === String(r[2]) && String(q[3]) === String(r[3]) && String(q[4]) === String(r[4]) &&
             q[1] instanceof Date && Math.abs(t0 - q[1].getTime()) < 600000) { r[5] = 'duplicada'; return; }
       }
+      if (/PRUEBA GASTOS AVISOS/i.test(String(r[4]))) { d2[i] = [r[0], r[1], r[2], r[3], r[4], 'prueba', '', '', '', '', '', '', '', '']; return; }
       const p = parseNotif_(sinCanal_(r[2]), String(r[3]), String(r[4]));
       // el mismo gasto que ya llegó por otro medio (notificación, SMS o mail)
       if (p.esMov) {
@@ -528,6 +529,8 @@ function api_(metodo, ruta, cuerpo) {
   if (r.getResponseCode() >= 300) {
     if (/has not been used|is disabled|SERVICE_DISABLED|User has not enabled the Apps Script API/i.test(txt))
       throw new Error('Falta activar la “API de Google Apps Script” en script.google.com/home/usersettings');
+    if (/insufficient authentication scopes|ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficientPermissions/i.test(txt))
+      throw new Error('Faltan permisos: en Apps Script mostrá el archivo appsscript.json, pegale el contenido del archivo appsscript.json y volvé a autorizar');
     throw new Error('Google respondió ' + r.getResponseCode() + ': ' + txt.slice(0, 300));
   }
   return txt ? JSON.parse(txt) : {};
@@ -598,7 +601,7 @@ function notifs_() {
   all.forEach(function (x) { if (x.estado === 'pendiente' || x.pregunta === 'preguntar') { const p = parseNotif_(sinCanal_(x.app), x.titulo, x.texto); x.digitos = p.digitos; x.cuotas = p.cuotas; } });
   const pend = all.filter(function (x) { return x.estado === 'pendiente'; });
   const cuotas = all.filter(function (x) { return x.estado === 'asignada' && x.pregunta === 'preguntar'; });
-  const rec = all.filter(function (x) { return x.estado !== 'pendiente'; }).slice(-40).reverse();
+  const rec = all.filter(function (x) { return x.estado !== 'pendiente' && x.estado !== 'descartada' && x.estado !== 'nueva'; }).slice(-40).reverse();
   return { pend: pend, rec: rec, cuotas: cuotas };
 }
 function setNotif_(id, cambios) {
@@ -733,6 +736,16 @@ function asignarNotif(json) {
     upsertMov_(o.mov);
     setNotif_(o.id, { Estado: 'asignada', Cuenta: o.mov.c, Concepto: o.mov.k || '', Movimiento: o.mov.id });
     agregarReglas_(o.reglas);
+    return 'ok';
+  });
+}
+function borrarNotif(id) {
+  dueno_();
+  return withLock_(function () {
+    const s = sh_('Notificaciones'), n = s.getLastRow();
+    if (n < 2) return 'ok';
+    const ids = s.getRange(2, 1, n - 1, 1).getValues();
+    for (let i = ids.length - 1; i >= 0; i--) if (String(ids[i][0]) === id) s.deleteRow(i + 2);
     return 'ok';
   });
 }

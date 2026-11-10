@@ -123,16 +123,28 @@ code.tok{background:var(--bg);padding:2px 6px;border-radius:6px;font-size:13px;u
 .gcell>small{position:relative;float:right;font-weight:700;margin-left:6px}
 .sem-v{background:#22a55a}.sem-a{background:#e6b800}.sem-r{background:#e03b3b}
 .tx-v{color:#178a47}.tx-a{color:#a37f00}.tx-r{color:#d23c3c}
-table.pr{width:100%;border-collapse:separate;border-spacing:0 4px;font-size:14px}
-table.pr th{font-size:12px;color:var(--mu);text-align:right;font-weight:600;padding:0 6px}
+.resumen{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;background:var(--bg);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.resumen b{font-size:15px}
+@media (max-width:600px){.resumen{grid-template-columns:1fr 1fr}}
+table.pr{width:100%;border-collapse:collapse;font-size:14px}
+table.pr th{font-size:11.5px;color:var(--mu);text-align:right;font-weight:600;padding:6px 6px;border-bottom:1px solid var(--ln);text-transform:uppercase;letter-spacing:.02em}
+table.pr td{padding:8px 6px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--ln);vertical-align:top}
+table.pr td:first-child{text-align:left;white-space:normal;width:100%}
+table.pr tr.cat td{font-weight:700;background:var(--bg);border-bottom:0}
+table.pr tr.cat td:first-child{border-radius:8px 0 0 8px}table.pr tr.cat td:last-child{border-radius:0 8px 8px 0}
+table.pr tr.sub td:first-child{padding-left:16px}
+table.pr tr.sub,table.pr tr.cat1{cursor:pointer}
+table.pr td.pct{font-weight:800;min-width:46px}
+table.pr.ed td{padding:5px 6px}
+table.pr input{width:120px;text-align:right;padding:6px 8px}
+details.sinp{margin-top:12px;border:1px solid var(--ln);border-radius:12px;padding:4px 10px}
+details.sinp summary{display:flex;justify-content:space-between;cursor:pointer;padding:8px 0;font-weight:600;font-size:14px;list-style:none}
+details.sinp summary::-webkit-details-marker{display:none}
+details.sinp summary span::before{content:'▸ ';color:var(--mu)}
+details.sinp[open] summary span::before{content:'▾ '}
+@media (max-width:600px){table.pr{font-size:13px}table.pr .disp{display:none}table.pr td,table.pr th{padding-left:4px;padding-right:4px}}
+table.pr.old{width:100%}
 table.pr th:first-child{text-align:left}
-table.pr td{padding:2px 6px;text-align:right;white-space:nowrap}
-table.pr td:first-child{text-align:left;white-space:normal}
-table.pr td.gc{width:44%;padding:2px 0}
-table.pr tr.cat td{font-weight:700;padding-top:12px}
-table.pr tr.tot td{font-weight:800;border-top:2px solid var(--ln);padding-top:8px}
-table.pr input{width:110px;text-align:right;padding:5px 7px}
-@media (max-width:600px){table.pr{font-size:13px}table.pr .disp{display:none}table.pr td.gc{width:52%}}
 .mas a{display:flex;align-items:center;gap:12px;padding:14px 4px;border-bottom:1px solid var(--ln);color:var(--tx);text-decoration:none;cursor:pointer}
 .mas a svg{width:22px;height:22px;color:var(--ac)}
 .qbtn{min-width:44px}
@@ -315,8 +327,8 @@ function vInicio(){
   const np=S.notifs.pend.length+S.notifs.cuotas.length+S.difs.length;
   const pr=presResumen(mes);
   return `${S.app&&S.app.hay?`<div class="card banner" onclick="go('ajustes')"><b>⬆️ Hay una versión nueva de la app (${h(S.app.remota)})</b><span>${S.app.auto?'Se instala sola esta noche ›':'Actualizar ›'}</span></div>`:''}${np?`<div class="card banner" onclick="go('clasificar')"><b>🔔 Tenés ${np} pendiente${np>1?'s':''} para revisar</b><span>Ver ›</span></div>`:''}
-  ${pr.pres?`<div class="card" style="cursor:pointer" onclick="go('presupuesto')"><h2>Presupuesto del mes<span class="num" style="text-transform:none;color:var(--tx)">${pctTxt(pr.gas,pr.pres)}</span></h2>
-    <div class="gcell" style="border-radius:8px">${barra(pr.gas,pr.pres)}<span class="num">${fmt(pr.gas,'UYU')} de ${fmt(pr.pres,'UYU')}</span></div></div>`:''}
+  ${pr.pres?`<div class="card" style="cursor:pointer" onclick="go('presupuesto')"><h2>Presupuesto del mes<span class="num" style="text-transform:none;font-size:20px">${pctTxt(pr.gas,pr.pres)}</span></h2>
+    <div class="sm">Gastado <b class="num">${fmt0(pr.gas)}</b> de <b class="num">${fmt0(pr.pres)}</b> · disponible <b class="num ${pr.pres-pr.gas<0?'neg':''}">${fmt0(pr.pres-pr.gas)}</b></div></div>`:''}
   <div class="grid2">
   <div class="card"><h2>Saldo total</h2>
     <div class="big num ${tU+toUYU(tD,'USD')<0?'neg':''}">${fmtS(tU+toUYU(tD,'USD'),'UYU')}</div>
@@ -614,7 +626,7 @@ function borrarTodo(){
 const NF0=v=>NF.format(v||0);
 function vClasificar(){
   const P=S.notifs.pend,R=S.notifs.rec;
-  const lbl={asignada:'<span class="chip">asignada</span>',descartada:'<span class="chip" style="background:var(--bg);color:var(--mu)">descartada</span>',ignorada:'<span class="chip" style="background:var(--bg);color:var(--mu)">no es gasto</span>',duplicada:'<span class="chip" style="background:var(--bg);color:var(--mu)">ya llegó por otro medio</span>'};
+  const lbl={asignada:'<span class="chip">asignada</span>',descartada:'<span class="chip" style="background:var(--bg);color:var(--mu)">descartada</span>',ignorada:'<span class="chip" style="background:var(--bg);color:var(--mu)">no es gasto</span>',duplicada:'<span class="chip" style="background:var(--bg);color:var(--mu)">ya llegó por otro medio</span>',prueba:'<span class="chip">✓ prueba recibida</span>'};
   const CQ=S.notifs.cuotas.filter(n=>S.movs.some(x=>x.id===n.mov)),D=S.difs;
   const grupos={};D.forEach(d=>(grupos[d.c]||(grupos[d.c]=[])).push(d));
   return `<div class="btns" style="margin-bottom:12px"><button class="btn" onclick="cargarPDF()">📄 Conciliar estado de cuenta (PDF)</button></div>
@@ -626,7 +638,7 @@ function vClasificar(){
    ${R.length?R.map(n=>`<div class="row" style="cursor:default"><div class="mid"><div class="t1" style="white-space:normal">${h(n.comercio||n.titulo||sinCanal(n.app)||'Aviso')} ${lbl[n.estado]||''}</div>
      <div class="t2">${h(n.fecha)} · ${canalIco(n.app)} ${h(sinCanal(n.app))}${n.estado==='asignada'?' · '+h(n.concepto)+' · '+h(n.cuenta):''} · ${h(n.texto)}</div></div>
      ${n.importe?`<div class="num">${fmt(n.importe,n.mon)}</div>`:''}
-     ${n.estado!=='asignada'&&n.estado!=='duplicada'?`<button class="btn sm" onclick="estadoNotif(${js(n.id)},'pendiente')">Clasificar</button>`:''}</div>`).join(''):'<div class="empty">Todavía no llegó ninguna notificación. Configurá el celular en Ajustes → Notificaciones del celular.</div>'}
+     ${n.estado==='ignorada'?`<button class="btn sm" onclick="estadoNotif(${js(n.id)},'pendiente')">Clasificar</button>`:''}${n.estado!=='asignada'?`<button class="btn sm" title="Borrar" onclick="borrarNotif(${js(n.id)})">🗑</button>`:''}</div>`).join(''):'<div class="empty">Todavía no llegó ninguna notificación. Configurá el celular en Ajustes → Notificaciones del celular.</div>'}
   </div>`;
 }
 function canalIco(a){const c=(String(a||'').match(/^(APP|SMS|MAIL)\|/)||[])[1]||'APP';return c==='MAIL'?'✉️':c==='SMS'?'💬':'🔔'}
@@ -692,8 +704,13 @@ async function asignar(id){
 async function estadoNotif(id,estado){
   const all=[...S.notifs.pend,...S.notifs.rec];const n=all.find(x=>x.id===id);if(!n)return;
   S.notifs.pend=S.notifs.pend.filter(x=>x.id!==id);S.notifs.rec=S.notifs.rec.filter(x=>x.id!==id);
-  n.estado=estado;if(estado==='pendiente')S.notifs.pend.push(n);else S.notifs.rec.unshift(n);
-  render();await op('estadoNotif',id,estado).catch(()=>{});
+  n.estado=estado;if(estado==='pendiente')S.notifs.pend.push(n);else if(estado!=='descartada')S.notifs.rec.unshift(n);
+  render();if(estado==='descartada')toast('Descartado');
+  await op('estadoNotif',id,estado).catch(()=>{});
+}
+async function borrarNotif(id){
+  S.notifs.pend=S.notifs.pend.filter(x=>x.id!==id);S.notifs.rec=S.notifs.rec.filter(x=>x.id!==id);S.notifs.cuotas=S.notifs.cuotas.filter(x=>x.id!==id);
+  render();toast('Borrado');await op('borrarNotif',id).catch(()=>{});
 }
 async function reprocesar(silencioso){
   const k=await op('reprocesar').catch(()=>null);
@@ -718,45 +735,54 @@ function presResumen(mes){
   for(const c of S.cfg.conceptos){if(c.tipo!=='G')continue;const p=presMes(c,mes);if(p>0){pres+=p;gas+=g[c.n]||0}}
   return {pres,gas};
 }
+function fmt0(v){const r=Math.round(v);return (r<0?'−':'')+'$ '+Math.abs(r).toLocaleString('es-UY')}
+function pctCelda(g,p){if(!p)return '<td class="pct mu">—</td>';const x=g/p*100;return `<td class="pct tx-${sem(x)}">${Math.round(x)}%</td>`}
 function vPresupuesto(){
   const P=V.pres||(V.pres={per:ym(hoy()),modo:'mes',edit:false});
   const y=P.per.slice(0,4),mesN=+P.per.slice(5,7);
   const fil=P.modo==='mes'?(x=>x.f.startsWith(P.per)):P.modo==='corriente'?(x=>x.f.startsWith(y)&&x.f.slice(0,7)<=P.per):(x=>x.f.startsWith(y));
-  const fac=P.modo==='mes'?1:P.modo==='corriente'?mesN:12;
   const gas=gastosConcepto(fil);
-  const cats={};
-  for(const c of S.cfg.conceptos.filter(c=>c.tipo==='G')){
-    const g=gas[c.n]||0,pp=presPeriodo(c,P);if(!P.edit&&!pp&&!g)continue;
-    (cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push({c,g,p:pp,ex:P.modo==='mes'?extrasMes(c.n,P.per):[]});
-  }
-  let TP=0,TG=0,html='';
-  for(const cat of Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es'))){
-    const L=cats[cat].sort((a,b)=>a.c.n.localeCompare(b.c.n,'es'));
-    const cp=L.reduce((s,r)=>s+r.p,0),cgB=L.reduce((s,r)=>s+(r.p?r.g:0),0),cg=cp?cgB:L.reduce((s,r)=>s+r.g,0);TP+=cp;TG+=cgB;
-    html+=`<tr class="cat"><td>${h(cat)}</td><td>${cp?fmt(cp,'UYU'):''}</td><td class="gc">${P.edit?'':celda(cg,cp)}</td><td class="disp">${cp?dispTxt(cp-cg):''}</td></tr>`;
-    for(const r of L)html+=`<tr><td style="padding-left:14px">${h(r.c.n)}${r.ex.length&&!P.edit?`<div class="xs mu">incluye ${r.ex.map(x=>h(x.n)+' '+fmt(x.m,'UYU')).join(', ')}</div>`:''}</td>
-      <td>${P.edit?`<input type="text" inputmode="decimal" data-con="${h(r.c.n)}" value="${r.c.pres?String(r.c.pres).replace('.',','):''}" placeholder="0">`:(r.p?fmt(r.p,'UYU'):'<span class="mu xs">sin presupuesto</span>')}</td>
-      <td class="gc">${P.edit?'':`<div style="cursor:pointer" onclick="filtrar({k:${js('G|'+r.c.n)}},'${P.modo==='mes'?P.per:y}')">${celda(r.g,r.p)}</div>`}</td><td class="disp">${r.p&&!P.edit?dispTxt(r.p-r.g):''}</td></tr>`;
-  }
-  const sinPres=Object.entries(gas).filter(([k])=>!S.cfg.conceptos.some(c=>c.tipo==='G'&&c.n===k));
-  return `<div class="card">
+  const per=P.modo==='mes'?P.per:y;
+  const cab=`<div class="card">
    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
     ${pnav('V.pres.per',P.per)}
     <div class="seg">${[['mes','Mes'],['corriente','Al corriente'],['anio','Año']].map(([k,l])=>`<button class="${P.modo===k?'on':''}" onclick="V.pres.modo='${k}';render()">${l}</button>`).join('')}</div>
    </div>
-   <div class="xs mu" style="margin-top:8px">${P.modo==='mes'?'Gastos del mes contra el presupuesto del mes (mensual + gastos anuales que caen este mes).':P.modo==='corriente'?`De enero a ${MESES[mesN-1]}: suma del presupuesto de cada mes, con los gastos anuales previstos.`:`Todo ${y}: presupuesto de los 12 meses, con los gastos anuales previstos.`}
-    Barra: <b class="tx-v">verde</b> hasta 75% · <b class="tx-a">amarilla</b> 76–100% · <b class="tx-r">roja</b> más de 100%.</div>
-  </div>
-  <div class="card">
-   <h2>Ejecución del presupuesto ${P.edit?'':`<button class="btn sm" onclick="V.pres.edit=true;render()">Editar presupuestos</button>`}</h2>
-   ${P.edit?'<p class="sm mu" style="margin-top:0">Poné el presupuesto <b>mensual</b> de cada concepto (en pesos). Dejalo vacío si no querés controlarlo.</p>':''}
-   <table class="pr"><tr><th>Concepto</th><th>Presupuesto</th><th>${P.edit?'':'Gastado'}</th><th class="disp">${P.edit?'':'Disponible'}</th></tr>
-   ${html||'<tr><td colspan="4" class="empty">Sin gastos ni presupuestos en este período</td></tr>'}
-   ${!P.edit&&TP?`<tr class="tot"><td>Total</td><td>${fmt(TP,'UYU')}</td><td class="gc">${celda(TG,TP)}</td><td class="disp">${dispTxt(TP-TG)}</td></tr>`:''}
-   </table>
-   ${P.edit?`<div class="btns" style="justify-content:flex-end;margin-top:10px"><button class="btn" onclick="V.pres.edit=false;render()">Cancelar</button><button class="btn pri" onclick="guardarPres()">Guardar presupuestos</button></div>`:''}
-   ${!P.edit&&TP&&TG<Object.values(gas).reduce((a,b)=>a+b,0)-0.5?`<div class="xs mu" style="margin-top:6px">Las categorías y el total comparan solo los conceptos que tienen presupuesto. Gasto total del período (con todo): <b class="num">${fmt(Object.values(gas).reduce((a,b)=>a+b,0),'UYU')}</b>.</div>`:''}
-   <div class="xs mu" style="margin-top:6px">Montos en pesos; dólares convertidos a $ ${NF.format(cot())}. Tocá un concepto para ver sus movimientos.</div>
+   <div class="xs mu" style="margin-top:8px">${P.modo==='mes'?'Gastos del mes contra el presupuesto del mes.':P.modo==='corriente'?`De enero a ${MESES[mesN-1]}.`:`Todo ${y}.`}
+    Avance: <b class="tx-v">verde</b> hasta 75% · <b class="tx-a">amarillo</b> 76–100% · <b class="tx-r">rojo</b> más de 100%.</div>
+  </div>`;
+  if(P.edit){
+    const cats={};for(const c of S.cfg.conceptos.filter(c=>c.tipo==='G'))(cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push(c);
+    return cab+`<div class="card"><h2>Presupuesto mensual por concepto</h2>
+     <p class="sm mu" style="margin-top:0">Poné cuánto querés gastar por mes en cada concepto (en pesos). Dejalo vacío si no lo querés controlar.</p>
+     <table class="pr ed">${Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es')).map(cat=>`<tr class="cat"><td colspan="2">${h(cat)}</td></tr>`+sortN(cats[cat]).map(c=>`<tr><td>${h(c.n)}</td><td><input type="text" inputmode="decimal" data-con="${h(c.n)}" value="${c.pres?String(c.pres).replace('.',','):''}" placeholder="0"></td></tr>`).join('')).join('')}</table>
+     <div class="btns" style="justify-content:flex-end;margin-top:10px"><button class="btn" onclick="V.pres.edit=false;render()">Cancelar</button><button class="btn pri" onclick="guardarPres()">Guardar</button></div></div>`+vExtras(P);
+  }
+  // conceptos con presupuesto (agrupados por categoría) y gastos sin presupuesto aparte
+  const cats={},sin=[];
+  for(const c of S.cfg.conceptos.filter(c=>c.tipo==='G')){
+    const g=gas[c.n]||0,pp=presPeriodo(c,P);
+    if(pp>0)(cats[c.cat||'Sin categoría']||(cats[c.cat||'Sin categoría']=[])).push({c,g,p:pp,ex:P.modo==='mes'?extrasMes(c.n,P.per):[]});
+    else if(g>0.5)sin.push({c,g});
+  }
+  let TP=0,TG=0,filas='';
+  for(const cat of Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es'))){
+    const L=cats[cat].sort((a,b)=>b.p-a.p);
+    const cp=L.reduce((s,r)=>s+r.p,0),cg=L.reduce((s,r)=>s+r.g,0);TP+=cp;TG+=cg;
+    if(L.length>1)filas+=`<tr class="cat"><td>${h(cat)}</td><td class="num">${fmt0(cp)}</td><td class="num">${fmt0(cg)}</td>${pctCelda(cg,cp)}<td class="disp num ${cp-cg<0?'neg':''}">${fmt0(cp-cg)}</td></tr>`;
+    for(const r of L)filas+=`<tr class="${L.length>1?'sub':'cat1'}" onclick="filtrar({k:${js('G|'+r.c.n)}},'${per}')"><td>${h(r.c.n)}${L.length===1&&norm(cat)!==norm(r.c.n)?`<div class="xs mu">${h(cat)}</div>`:''}${r.ex.length?`<div class="xs mu">incluye ${r.ex.map(x=>h(x.n)).join(', ')}</div>`:''}</td>
+      <td class="num">${fmt0(r.p)}</td><td class="num">${fmt0(r.g)}</td>${pctCelda(r.g,r.p)}<td class="disp num ${r.p-r.g<0?'neg':''}">${fmt0(r.p-r.g)}</td></tr>`;
+  }
+  const totSin=sin.reduce((s,r)=>s+r.g,0);
+  return cab+`<div class="card">
+   <h2>Ejecución del presupuesto <button class="btn sm" onclick="V.pres.edit=true;render()">Editar</button></h2>
+   ${TP?`<div class="resumen"><div><div class="xs mu">Presupuesto</div><b class="num">${fmt0(TP)}</b></div><div><div class="xs mu">Gastado</div><b class="num">${fmt0(TG)}</b></div>
+     <div><div class="xs mu">Avance</div><b class="num tx-${sem(TG/TP*100)}" style="font-size:20px">${Math.round(TG/TP*100)}%</b></div><div><div class="xs mu">Disponible</div><b class="num ${TP-TG<0?'neg':''}">${fmt0(TP-TG)}</b></div></div>
+   <table class="pr"><tr><th>Concepto</th><th>Presup.</th><th>Gastado</th><th>%</th><th class="disp">Disponible</th></tr>${filas}</table>`
+   :`<div class="empty">Todavía no cargaste presupuestos.<br><button class="btn pri" style="margin-top:10px" onclick="V.pres.edit=true;render()">Cargar presupuestos</button></div>`}
+   ${sin.length?`<details class="sinp"><summary><span>Gastos sin presupuesto (${sin.length})</span><b class="num">${fmt0(totSin)}</b></summary>
+     <table class="pr">${sin.sort((a,b)=>b.g-a.g).map(r=>`<tr class="sub" onclick="filtrar({k:${js('G|'+r.c.n)}},'${per}')"><td>${h(r.c.n)}<div class="xs mu">${h(r.c.cat||'')}</div></td><td class="num">${fmt0(r.g)}</td></tr>`).join('')}</table></details>`:''}
+   <div class="xs mu" style="margin-top:8px">En pesos; dólares a $ ${NF.format(cot())}. Tocá un concepto para ver sus movimientos.</div>
   </div>
   ${vExtras(P)}`;
 }
