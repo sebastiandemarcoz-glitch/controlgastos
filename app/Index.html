@@ -556,6 +556,9 @@ function vAjustes(){
     return Object.keys(cats).sort((a,b)=>a.localeCompare(b,'es')).map(cat=>`<div class="catH">${h(cat)}</div>`+sortN(cats[cat]).map(c=>`<div class="row" onclick="openConcepto(${js(c.tipo)},${js(c.n)})"><div class="mid"><div class="t1">${h(c.n)}</div></div><span class="mu xs">${uso[c.tipo+'|'+c.n]||0} mov.</span></div>`).join('')).join('');
   };
   return `<div class="grid2">
+  <div class="card"><h2>Saldos de las cuentas</h2>
+   <p class="sm mu" style="margin-top:0">Poné lo que tenés hoy en cada cuenta y lo que debés hoy en cada tarjeta. La app ajusta el punto de partida sin tocar tu historial.</p>
+   <button class="btn pri" onclick="fijarSaldos()">Fijar saldos de hoy</button></div>
   <div class="card"><h2>Cotización del dólar</h2>
    <div class="big num">$ ${NF.format(cot())}</div>
    <div class="sm mu">BROU · Dólar eBROU · venta${S.cfg.cotFecha?' · actualizada '+h(S.cfg.cotFecha):''}</div>
@@ -759,7 +762,7 @@ function guardarPres(){
 
 /* ---------- Más (celular) ---------- */
 function vMas(){
-  return `<div class="card mas">${[['cuentas','Cuentas'],['informes','Informes'],['fijos','Gastos fijos'],['ajustes','Ajustes']].map(([k,l])=>`<a onclick="go('${k}')">${ICONS[k]||''}<span>${l}</span></a>`).join('')}</div>`;
+  return `<div class="card mas"><a onclick="fijarSaldos()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg><span><b>Fijar saldos de hoy</b><br><span class="xs mu">Lo que tenés en cada cuenta y lo que debés en cada tarjeta</span></span></a>${[['cuentas','Cuentas'],['informes','Informes'],['fijos','Gastos fijos'],['ajustes','Ajustes']].map(([k,l])=>`<a onclick="go('${k}')">${ICONS[k]||''}<span>${l}</span></a>`).join('')}</div>`;
 }
 
 /* ---------- Gastos fijos ---------- */
