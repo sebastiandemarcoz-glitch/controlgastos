@@ -1127,6 +1127,7 @@ function vVersion(){
   return `<div class="card" style="margin-top:12px"><h2>Versión de la app</h2>
    <div class="kv"><span>Instalada</span><b>${h(A.version||'?')}</b></div>
    <div class="kv"><span>Publicada</span><b>${h(A.remota||'—')}</b></div>
+   ${A.errorRemota?`<div class="xs neg">No pude consultar las versiones publicadas: ${h(A.errorRemota)}</div>`:''}
    ${A.hay?`<div class="nt"><b>Hay una versión nueva.</b> ${h(A.notas||'')}</div>`:'<div class="sm pos" style="margin:4px 0 8px">✓ Estás en la última versión</div>'}
    ${A.ultima?`<div class="xs mu">Última actualización: ${h(A.ultima)}</div>`:''}
    ${A.error?`<div class="xs neg">Último error al actualizar: ${h(A.error)}</div>`:''}
@@ -1136,7 +1137,7 @@ function vVersion(){
   </div>`;
 }
 async function buscarAct(){
-  try{S.app=JSON.parse(await call('buscarActualizacion'));render();toast(S.app.hay?'Hay una versión nueva':'Estás en la última versión')}catch(e){toast('No pude buscar: '+(e.message||e))}
+  try{S.app=JSON.parse(await call('buscarActualizacion'));render();toast(S.app.errorRemota?'No pude consultar GitHub: '+S.app.errorRemota:S.app.hay?'Hay una versión nueva':'Estás en la última versión')}catch(e){toast('No pude buscar: '+(e.message||e))}
 }
 async function actualizarYa(){
   const b=document.getElementById('btnAct'),out=document.getElementById('actOut');b.disabled=true;b.textContent='Actualizando…';

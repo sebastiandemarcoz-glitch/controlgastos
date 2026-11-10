@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.3.0';
+const VERSION_APP = '5.3.1';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -515,8 +515,9 @@ function versionRemota_(sinCache) {
   try {
     const r = UrlFetchApp.fetch(RAW + 'version.json?t=' + Date.now(), { muteHttpExceptions: true });
     if (r.getResponseCode() === 200) o = JSON.parse(r.getContentText());
-  } catch (e) { o = null; }
-  c.put('verRemota', JSON.stringify(o), 3600);
+    else o = { error: 'GitHub respondió ' + r.getResponseCode() };
+  } catch (e) { o = { error: String(e.message || e) }; }
+  c.put('verRemota', JSON.stringify(o), o && o.version ? 3600 : 60);
   return o;
 }
 function api_(metodo, ruta, cuerpo) {
@@ -656,7 +657,8 @@ function getData() {
 }
 function infoVersion_() {
   const rem = versionRemota_();
-  return { version: VERSION_APP, remota: rem && rem.version || '', notas: rem && rem.notas || '', hay: !!(rem && cmpVer_(rem.version, VERSION_APP) > 0),
+  return { version: VERSION_APP, remota: rem && rem.version || '', notas: rem && rem.notas || '', hay: !!(rem && rem.version && cmpVer_(rem.version, VERSION_APP) > 0),
+    errorRemota: rem && rem.error || (rem ? '' : 'sin respuesta de GitHub'),
     auto: getConfig_('auto_actualizar') !== 'no', ultima: String(getConfig_('ultima_actualizacion') || ''), error: String(getConfig_('error_actualizacion') || ''), repo: REPO };
 }
 function saveMov(json) {
