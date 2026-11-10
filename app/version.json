@@ -1,1 +1,1 @@
-{"version": "5.5.3", "notas": "Gastos/ingresos fijos ahora dentro de Presupuesto. Inicio: Saldo neto desglosado (bancos − deuda de tarjetas − cuotas futuras), sin cuentas archivadas."}
+{"version": "5.5.4", "notas": "Inicio: saldo neto solo con cajas de ahorro (sin efectivo), porcentaje de presupuesto por categoría y mes con real a hoy vs presupuesto."}

@@ -347,14 +347,17 @@ function vInicio(){
   const sal=saldos(),hy=hoy(),mes=ym(hy);
   let tU=0,tD=0,fut=0;
   const cs=S.cfg.cuentas.filter(c=>!c.arch);
-  let bancos=0,deudaTC=0,cuotasFut=0,usdB=0;
+  let bancos=0,deudaTC=0,cuotasFut=0;const lb=[];
   for(const c of S.cfg.cuentas){if(c.arch)continue;const s=sal[c.n];
-    if(c.mon==='USD')tD+=s.s;else tU+=s.s;fut+=toUYU(s.fut,c.mon);
-    if(esTC(c.n)){deudaTC+=-toUYU(s.s,c.mon);cuotasFut+=-toUYU(s.fut,c.mon)}else{bancos+=toUYU(s.s,c.mon);if(c.mon==='USD')usdB+=s.s}}
+    if(esTC(c.n)){deudaTC+=-toUYU(s.s,c.mon);cuotasFut+=-toUYU(s.fut,c.mon)}
+    else if(!/efectivo/i.test(norm(c.n))){bancos+=toUYU(s.s,c.mon);lb.push(c)}}
   const neto=bancos-deudaTC-cuotasFut;
   const ms=movs().filter(x=>x.f.startsWith(mes));const{g,i}=sumGI(ms);
-  const by={};for(const x of ms)if(x.t==='G'){const c=catOf(x);by[c]=(by[c]||0)+toUYU(x.m,monOf(x.c))}
-  const top=Object.entries(by).sort((a,b)=>b[1]-a[1]).slice(0,7);const mx=top.length?top[0][1]:1;
+  const msH=ms.filter(x=>x.f<=hy);const rH=sumGI(msH);
+  let pG=0,pI=0;for(const c of S.cfg.conceptos){const v=presMes(c,mes);if(c.tipo==='I')pI+=v;else if(c.tipo==='G')pG+=v}
+  const by={},pc={};for(const x of ms)if(x.t==='G'){const c=catOf(x);by[c]=(by[c]||0)+toUYU(x.m,monOf(x.c))}
+  for(const c of S.cfg.conceptos){if(c.tipo!=='G')continue;const v=presMes(c,mes);if(v>0){const k=c.cat||'Sin categoría';pc[k]=(pc[k]||0)+v;if(!(k in by))by[k]=0}}
+  const top=Object.entries(by).sort((a,b)=>b[1]-a[1]||(pc[b[0]]||0)-(pc[a[0]]||0)).slice(0,10);
   const ult=movs().filter(x=>x.f<=hy).slice(0,8);
   const np=S.notifs.pend.length+S.notifs.cuotas.length+S.difs.length;
   const pr=presResumen(mes);
@@ -364,21 +367,26 @@ function vInicio(){
   <div class="grid2">
   <div class="card"><h2>Saldo neto <button class="btn sm" onclick="fijarSaldos()">Fijar saldos</button></h2>
     <div class="big num ${neto<0?'neg':''}">${fmtS(neto,'UYU')}</div>
-    <div class="kv sm"><span class="mu">En bancos y efectivo${usdB?` <span class="xs">(incluye ${fmt(usdB,'USD')})</span>`:''}</span><span class="num">${fmtS(bancos,'UYU')}</span></div>
+    <div class="kv sm"><span class="mu">Cajas de ahorro</span><span class="num">${fmtS(bancos,'UYU')}</span></div>
+    ${lb.map(c=>`<div class="kv xs mu" style="padding:0 0 0 12px"><span>${h(c.n)}</span><span class="num">${fmtS(sal[c.n].s,c.mon)}</span></div>`).join('')}
     <div class="kv sm"><span class="mu">− Deuda de tarjetas hoy</span><span class="num ${deudaTC>0?'neg':''}">${fmtS(-deudaTC,'UYU')}</span></div>
     <div class="kv sm"><span class="mu">− Cuotas futuras de tarjetas</span><span class="num ${cuotasFut>0?'neg':''}">${fmtS(-cuotasFut,'UYU')}</span></div>
-    <div class="xs mu" style="margin-top:4px">Es lo que te queda si pagaras hoy todas las tarjetas, incluidas las cuotas que faltan. No cuenta las cuentas archivadas. Dólares a $ ${NF.format(cot())} (eBROU venta${S.cfg.cotFecha?', '+h(S.cfg.cotFecha):''}).</div>
+    <div class="xs mu" style="margin-top:4px">Es lo que te queda si pagaras hoy todas las tarjetas, incluidas las cuotas que faltan. No cuenta efectivo ni cuentas archivadas. Dólares a $ ${NF.format(cot())} (eBROU venta${S.cfg.cotFecha?', '+h(S.cfg.cotFecha):''}).</div>
   </div>
   <div class="card"><h2>${h(perLabel(mes))}</h2>
-    <div class="kv"><span>Ingresos</span><span class="num pos">${fmt(i,'UYU')}</span></div>
-    <div class="kv"><span>Gastos</span><span class="num neg">${fmt(g,'UYU')}</span></div>
-    <div class="kv" style="border-top:1px solid var(--ln);margin-top:4px;padding-top:8px"><b>Balance</b><b class="num ${i-g<0?'neg':'pos'}">${fmtS(i-g,'UYU')}</b></div>
+    <table class="pr" style="width:100%"><thead><tr><th></th><th class="num">Real a hoy</th>${pG||pI?'<th class="num">Presupuesto</th>':''}</tr></thead><tbody>
+    <tr><td>Ingresos</td><td class="num pos">${fmt0(rH.i)}</td>${pG||pI?`<td class="num mu">${pI?fmt0(pI):'—'}</td>`:''}</tr>
+    <tr><td>Gastos</td><td class="num neg">${fmt0(rH.g)}</td>${pG||pI?`<td class="num mu">${pG?fmt0(pG):'—'}</td>`:''}</tr>
+    <tr style="border-top:1px solid var(--ln)"><td><b>Balance</b></td><td class="num"><b class="${rH.i-rH.g<0?'neg':'pos'}">${fmt0(rH.i-rH.g)}</b></td>${pG||pI?`<td class="num"><b class="${pI-pG<0?'neg':'pos'}">${pI&&pG?fmt0(pI-pG):'—'}</b></td>`:''}</tr>
+    </tbody></table>
+    ${Math.abs(i-rH.i)+Math.abs(g-rH.g)>0.5?`<div class="xs mu" style="margin-top:6px">Además hay programado para lo que queda del mes (fijos y cuotas): ingresos ${fmt0(i-rH.i)} · gastos ${fmt0(g-rH.g)}.</div>`:''}
+    <div class="xs mu" style="margin-top:4px">“Real a hoy”: movimientos cargados con fecha hasta hoy. “Presupuesto”: lo previsto para el mes en Presupuesto.</div>
   </div>
   <div class="card"><h2>Cuentas <span class="btns"><button class="btn sm" onclick="fijarSaldos()">Fijar saldos</button><button class="btn sm" onclick="go('cuentas')">Ver todas</button></span></h2>
     ${cs.length?cs.map(c=>`<div class="row" onclick="verCuenta(${js(c.n)})"><div class="mid"><div class="t1">${h(c.n)}</div></div><div class="num ${sal[c.n].s<0?'neg':''}">${fmtS(sal[c.n].s,c.mon)}</div></div>`).join(''):'<div class="empty">Sin cuentas</div>'}
   </div>
   <div class="card"><h2>Gastos del mes por categoría <button class="btn sm" onclick="V.inf.per='${mes}';V.inf.tipo='G';go('informes')">Informe</button></h2>
-    ${top.length?top.map(([k,v])=>`<div style="padding:5px 0;cursor:pointer" onclick="V.inf.per='${mes}';V.inf.tipo='G';V.inf.by='k';V.inf.cat=${js(k)};go('informes')"><div class="kv sm" style="padding:0"><span>${h(k)}</span><span class="num">${fmt(v,'UYU')}</span></div><div class="bar G"><i style="width:${(v/mx*100).toFixed(1)}%"></i></div></div>`).join(''):'<div class="empty">Todavía no hay gastos este mes</div>'}
+    ${top.length?top.map(([k,v])=>{const p=pc[k]||0;return `<div class="kv sm" style="padding:6px 0;cursor:pointer;border-bottom:1px solid var(--ln)" onclick="V.inf.per='${mes}';V.inf.tipo='G';V.inf.by='k';V.inf.cat=${js(k)};go('informes')"><span>${h(k)}<br><span class="xs mu num">${fmt0(v)}${p?' de '+fmt0(p):' · sin presupuesto'}</span></span><b class="num" style="font-size:17px">${p?`<span class="tx-${sem(v/p*100)}">${Math.round(v/p*100)}%</span>`:'<span class="mu">—</span>'}</b></div>`}).join(''):'<div class="empty">Todavía no hay gastos este mes</div>'}
   </div>
   </div>
   <div class="card" style="margin-top:12px"><h2>Últimos movimientos <button class="btn sm" onclick="go('movimientos')">Ver todos</button></h2>
