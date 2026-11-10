@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.5.4';
+const VERSION_APP = '5.5.5';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -273,13 +273,20 @@ function palabras_(s) { return ' ' + normTxt_(s).replace(/[^a-z0-9]+/g, ' ').tri
 function parseNotif_(app, titulo, texto) {
   const full = [titulo, texto].filter(function (x) { return x; }).join('. ').replace(/\s+/g, ' ');
   const n = normTxt_(full);
-  const p = { app: app || '', texto: full, importe: 0, mon: 'UYU', comercio: '', tipo: 'G', digitos: '', esMov: false };
-  if (/rechazad|denegad|no aprobad|no fue aprobad|codigo de (verificacion|seguridad)|tu clave|token|inicio de sesion|iniciaste sesion/.test(n)) return p;
+  const p = { app: app || '', texto: full, importe: 0, mon: 'UYU', comercio: '', tipo: 'G', digitos: '', esMov: false, rechazo: false };
+  if (/rechazad|denegad|no aprobad|no fue aprobad|codigo de (verificacion|seguridad)|tu clave|token|inicio de sesion|iniciaste sesion/.test(n)) { p.rechazo = true; return p; }
   let m = /(u\$s|us\$|usd|u\$d|uyu|\$u|\$)\s*([0-9][0-9.,]*)/i.exec(full);
   if (m) { p.importe = num_(m[2]); p.mon = /^(u\$s|us\$|usd|u\$d)$/i.test(m[1]) ? 'USD' : 'UYU'; }
   else {
     m = /([0-9][0-9.,]*)\s*(pesos|d[oó]lares|uyu|usd)/i.exec(full);
     if (m) { p.importe = num_(m[1]); p.mon = /d[oó]lar|usd/i.test(m[2]) ? 'USD' : 'UYU'; }
+  }
+  if (!m) {
+    // Sin signo de moneda: "Importe: 1234", "Monto 1.234,50" o el primer número con centavos ("por 1.234,50", "450.00").
+    // No toma fechas (10/11, 10.11.2026), horas (17:25) ni los 4 dígitos de la tarjeta.
+    m = /\b(?:importe|monto|total|valor)\s*:?\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{1,2})?|[0-9]+(?:[.,][0-9]{1,2})?)(?![0-9\/:])/i.exec(full) ||
+        /(?<![0-9\/:.,])([0-9]{1,3}(?:[.,][0-9]{3})*[.,][0-9]{2}|[0-9]+[.,][0-9]{2})(?![0-9\/:]|[.,][0-9])/.exec(full);
+    if (m) { p.importe = num_(m[1]); p.mon = /d[oó]lar|\busd\b|u\$s|us\$/i.test(full) ? 'USD' : 'UYU'; }
   }
   p.esMov = p.importe > 0;
   if (/acredit|recibiste|te transfiri|transferencia recibida|deposito|reintegro|devolucion|cobraste/.test(n)) p.tipo = 'I';
@@ -300,7 +307,7 @@ function parseNotif_(app, titulo, texto) {
   if (!p.comercio && m) {   // "Compra U$S 20,00 ANTHROPIC CLAUDE tarjeta 4321"
     const resto = full.slice(full.indexOf(m[0]) + m[0].length);
     const cx = resto.match(/^\s*[,.]?\s*([A-Za-z][A-Za-z0-9*.&'\/ -]{2,40}?)(?=\s+(?:tarjeta|con|el|en|por|fecha|hora|aprobad[ao])\b|[.,;]|$)/i);
-    if (cx && !/^(en|con|por|pesos|d[oó]lares)$/i.test(cx[1].trim())) p.comercio = cx[1].trim();
+    if (cx && !/^(en|con|por|pesos|d[oó]lares)$/i.test(cx[1].trim()) && !/^(el|la|del|de)\s+\d/i.test(cx[1].trim())) p.comercio = cx[1].trim();
   }
   const dg = full.match(/(?:terminad[ao] en|finalizad[ao] en|final|\*+|x{3,4})\s*(\d{4})\b/i);
   if (dg) p.digitos = dg[1];
@@ -407,6 +414,8 @@ function procesarNuevas_() {
         }
       }
       let estado = 'ignorada', mid = '', cuotas = '';
+      // Lo que manda la app del celular ya pasó por sus palabras clave: si no trae un importe reconocible, se pregunta.
+      if (!p.esMov && !p.rechazo && canal_(r[2]) !== 'MAIL') estado = 'pendiente';
       if (p.esMov) {
         resolver_(p, cfg, reglas);
         estado = 'pendiente';
@@ -758,7 +767,7 @@ function reprocesar() {
       if (r[5] !== 'pendiente') return;
       const p = resolver_(parseNotif_(sinCanal_(r[2]), r[3], r[4]), cfg, reglas);
       r[9] = p.cuenta || ''; r[10] = p.concepto || '';
-      if (p.cuenta && p.concepto && (p.tipo === 'G' || p.tipo === 'I')) {
+      if (p.importe > 0 && p.cuenta && p.concepto && (p.tipo === 'G' || p.tipo === 'I')) {
         const mid = 'm' + String(r[0]).slice(1);
         upsertMov_({ id: mid, f: Utilities.formatDate(r[1] instanceof Date ? r[1] : new Date(), tz_(), 'yyyy-MM-dd'), t: p.tipo, c: p.cuenta, k: p.concepto,
           m: Math.round(p.importe * 100) / 100, d: p.comercio || '', ts: Date.now() });

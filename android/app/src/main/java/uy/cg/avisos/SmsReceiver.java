@@ -21,7 +21,7 @@ public class SmsReceiver extends BroadcastReceiver {
             if (m.getDisplayMessageBody() != null) sb.append(m.getDisplayMessageBody());
         }
         String texto = sb.toString();
-        if (!Sender.pareceMovimiento(texto)) return;
+        if (!Sender.pareceMovimiento(c, texto)) return;
         final PendingResult pr = goAsync();
         Sender.enviar(c, "SMS", de, "", texto, pr::finish);
     }

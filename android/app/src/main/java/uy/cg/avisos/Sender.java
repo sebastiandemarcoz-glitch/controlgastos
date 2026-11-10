@@ -13,19 +13,46 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
-import java.util.regex.Pattern;
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.List;
 
 /** Manda cada aviso de movimiento al receptor de la app de gastos (Google Apps Script). */
 public final class Sender {
     private Sender() {}
 
-    static final Pattern MONTO = Pattern.compile("(U\\$S|US\\$|USD|UYU|\\$)\\s?-?\\d", Pattern.CASE_INSENSITIVE);
-    static final Pattern CLAVE = Pattern.compile(
-            "compra|consumo|d[eé]bito|transacci|transfer|acredit|pago|retiro|cobro|dep[oó]sito|cargo|operaci",
-            Pattern.CASE_INSENSITIVE);
+    /** Palabras clave de fábrica: alcanza con que el mensaje tenga una (sin importar mayúsculas ni tildes). */
+    static final String CLAVES_FABRICA =
+            "compra\nconsumo\ndébito\ntransacción\ntransferencia\nacreditación\nacreditó\npago\nretiro\ncobro\ndepósito\ncargo\noperación\n$\nu$s\nusd\nuyu";
 
-    static boolean pareceMovimiento(String t) {
-        return t != null && MONTO.matcher(t).find() && CLAVE.matcher(t).find();
+    static String normalizar(String t) {
+        String s = Normalizer.normalize(t == null ? "" : t, Normalizer.Form.NFD).replaceAll("\\p{M}+", "");
+        return s.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ");
+    }
+
+    static String clavesTexto(Context c) {
+        return prefs(c).getString("claves", CLAVES_FABRICA);
+    }
+
+    static List<String> claves(Context c) {
+        List<String> r = new ArrayList<>();
+        for (String w : clavesTexto(c).split("[\\n,;]+")) {
+            String n = normalizar(w).trim();
+            if (!n.isEmpty()) r.add(n);
+        }
+        return r;
+    }
+
+    /** Devuelve la palabra clave que aparece en el mensaje, o null si no tiene ninguna (y entonces no se manda). */
+    static String palabraEncontrada(Context c, String t) {
+        String n = normalizar(t);
+        if (n.trim().isEmpty()) return null;
+        for (String w : claves(c)) if (n.contains(w)) return w;
+        return null;
+    }
+
+    static boolean pareceMovimiento(Context c, String t) {
+        return palabraEncontrada(c, t) != null;
     }
 
     static SharedPreferences prefs(Context c) {

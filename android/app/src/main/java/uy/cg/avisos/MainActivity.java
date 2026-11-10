@@ -24,7 +24,7 @@ import android.widget.Toast;
 /** Pantalla única: permisos, configuración (dirección y clave) y últimos envíos. */
 public class MainActivity extends Activity {
     private TextView estadoNotif, estadoSms, estadoCfg, log;
-    private EditText url, clave;
+    private EditText url, clave, claves;
 
     @Override
     protected void onCreate(Bundle b) {
@@ -37,7 +37,7 @@ public class MainActivity extends Activity {
         TextView t = texto("Gastos · Avisos", 22, true);
         l.addView(t);
         l.addView(texto("Manda a tu app de gastos los avisos de compras que llegan por notificación o SMS. "
-                + "Solo se mandan los mensajes que traen un importe ($ o U$S); el resto no sale del celular.", 14, false));
+                + "Solo se mandan los mensajes que tienen alguna de tus palabras clave (paso 4); el resto no sale del celular.", 14, false));
 
         l.addView(titulo("1. Conectar con tu app de gastos"));
         estadoCfg = texto("", 14, false);
@@ -65,6 +65,44 @@ public class MainActivity extends Activity {
                 + "en la pantalla de la app abrí el menú ⋮ (arriba a la derecha) → \"Permitir configuración restringida\" y volvé a intentar.", 13, false));
         l.addView(boton("Abrir información de la app", v -> startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                 Uri.parse("package:" + getPackageName())))));
+
+        l.addView(titulo("4. Palabras clave"));
+        l.addView(texto("Se manda todo mensaje que tenga al menos una de estas palabras (una por línea). "
+                + "No importan mayúsculas ni tildes, y alcanza con una parte: \"acredit\" sirve para acreditación y acreditó. "
+                + "Agregá palabras que usen tus bancos, por ejemplo el nombre del banco o \"tarjeta\".", 13, false));
+        claves = new EditText(this);
+        claves.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        claves.setSingleLine(false);
+        claves.setMinLines(5);
+        claves.setGravity(Gravity.TOP | Gravity.START);
+        claves.setText(Sender.clavesTexto(this));
+        l.addView(claves);
+        LinearLayout fila = new LinearLayout(this);
+        fila.addView(boton("Guardar palabras", v -> {
+            Sender.prefs(this).edit().putString("claves", claves.getText().toString()).apply();
+            Toast.makeText(this, "Palabras guardadas (" + Sender.claves(this).size() + ")", Toast.LENGTH_SHORT).show();
+        }));
+        fila.addView(boton("Volver a las de fábrica", v -> {
+            Sender.prefs(this).edit().remove("claves").apply();
+            claves.setText(Sender.clavesTexto(this));
+            Toast.makeText(this, "Se restauraron las palabras de fábrica", Toast.LENGTH_SHORT).show();
+        }));
+        l.addView(fila);
+
+        l.addView(texto("Probar un mensaje: pegá el texto de un aviso de tu banco para ver si se mandaría.", 13, false));
+        EditText prueba = new EditText(this);
+        prueba.setHint("Ej.: Compra aprobada por 1.234,50 en TATA");
+        prueba.setSingleLine(false);
+        prueba.setMinLines(2);
+        l.addView(prueba);
+        TextView res = texto("", 14, true);
+        l.addView(boton("Probar mensaje", v -> {
+            Sender.prefs(this).edit().putString("claves", claves.getText().toString()).apply();
+            String w = Sender.palabraEncontrada(this, prueba.getText().toString());
+            if (w != null) { res.setText("✓ Se manda (tiene \"" + w + "\")"); res.setTextColor(Color.rgb(20, 145, 95)); }
+            else { res.setText("✗ No se manda: no tiene ninguna palabra clave"); res.setTextColor(Color.rgb(210, 60, 60)); }
+        }));
+        l.addView(res);
 
         l.addView(titulo("Probar"));
         l.addView(boton("Mandar un aviso de prueba", v -> {

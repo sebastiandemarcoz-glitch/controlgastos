@@ -40,7 +40,7 @@ public class NotifListener extends NotificationListenerService {
             CharSequence b = e.getCharSequence(Notification.EXTRA_BIG_TEXT);
             String titulo = t == null ? "" : t.toString();
             String texto = b != null && b.length() > 0 ? b.toString() : (x == null ? "" : x.toString());
-            if (!Sender.pareceMovimiento(titulo + " " + texto)) return;
+            if (!Sender.pareceMovimiento(this, titulo + " " + texto)) return;
             String clave = pkg + "|" + titulo + "|" + texto;
             long ahora = System.currentTimeMillis();
             synchronized (recientes) {

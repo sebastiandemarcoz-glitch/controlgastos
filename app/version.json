@@ -1,1 +1,1 @@
-{"version": "5.5.4", "notas": "Inicio: saldo neto solo con cajas de ahorro (sin efectivo), porcentaje de presupuesto por categoría y mes con real a hoy vs presupuesto."}
+{"version": "5.5.5", "notas": "Avisos: se reconocen importes sin signo de moneda (ej. \"por 1.234,50\") y los avisos del celular sin importe quedan por clasificar en vez de descartarse."}
