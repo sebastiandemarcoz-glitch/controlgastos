@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.3.1';
+const VERSION_APP = '5.3.2';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -430,7 +430,7 @@ function procesarNuevas_() {
   });
 }
 /** Lo ejecuta un activador cada 5 minutos, así los gastos se asignan aunque no abras la app. */
-function procesarNotificaciones() { leerGmail_(); procesarNuevas_(); }
+function procesarNotificaciones() { leerGmail_(); procesarNuevas_(); try { cotizacion_(); } catch (e) { } }
 
 /* ---------- mails de los bancos (Gmail) ---------- */
 const REMITENTES_DEF = 'bbva, itau, brou, sistarbanc, oca, prex, santander, scotiabank, hsbc, midinero, heritage, bandes';
@@ -632,12 +632,10 @@ function agregarReglas_(nuevas) {
 /* ---------- API que usa la app ---------- */
 function getData() {
   dueno_();
-  instalarActivadores_();
-  leerGmail_();
-  procesarNuevas_();
+  try { procesarNuevas_(); } catch (e) { /* se reintenta en segundo plano */ }
   const cfg = leerCfg_();
-  const cot = cotizacion_();
-  cfg.cot = cot.v || 40; cfg.cotFecha = cot.f; cfg.cotOk = cot.ok;
+  // la cotización guardada (se actualiza en segundo plano con extrasCarga y el activador)
+  cfg.cot = num_(getConfig_('cotizacion')) || 40; cfg.cotFecha = String(getConfig_('cotizacion_fecha') || ''); cfg.cotOk = true;
   const raw = body_('Movimientos');
   const movs = [];
   let fix = false;
@@ -651,14 +649,27 @@ function getData() {
   const nuevosFijos = generarFijos_();
   nuevosFijos.forEach(function (x) { movs.push(x); });
   return JSON.stringify({ cfg: cfg, movs: movs, sheet: book_().getUrl(), notifs: notifs_(), reglas: leerReglas_(), token: token_(),
-    fijos: leerFijos_(), difs: leerDifs_(), extras: leerExtras_(), app: infoVersion_(), url: ScriptApp.getService().getUrl(),
+    fijos: leerFijos_(), difs: leerDifs_(), extras: leerExtras_(), app: infoVersion_(true), url: ScriptApp.getService().getUrl(),
     avisos: { gmail: getConfig_('leer_gmail') === 'si', gmailEstado: String(getConfig_('gmail_estado') || ''),
-      remitentes: String(getConfig_('remitentes_mail') || REMITENTES_DEF), receptor: urlReceptor_() } });
+      remitentes: String(getConfig_('remitentes_mail') || REMITENTES_DEF), receptor: String(getConfig_('url_receptor') || '') } });
 }
-function infoVersion_() {
-  const rem = versionRemota_();
+/** Lo que necesita internet (BROU, GitHub, Gmail, Google): se pide después de mostrar la app, sin hacerla esperar. */
+function extrasCarga() {
+  dueno_();
+  const r = {};
+  try { instalarActivadores_(); } catch (e) { }
+  try { const c = cotizacion_(); r.cot = c.v; r.cotFecha = c.f; r.cotOk = c.ok; } catch (e) { r.cotOk = false; }
+  try { r.app = infoVersion_(); } catch (e) { r.app = null; }
+  try { r.receptor = urlReceptor_(); } catch (e) { r.receptor = ''; }
+  try { r.mails = leerGmail_(); if (r.mails) procesarNuevas_(); } catch (e) { r.mails = 0; }
+  r.gmailEstado = String(getConfig_('gmail_estado') || '');
+  return JSON.stringify(r);
+}
+function infoVersion_(soloCache) {
+  const hit = soloCache && CacheService.getScriptCache().get('verRemota');
+  const rem = soloCache ? (hit ? JSON.parse(hit) : { version: '' }) : versionRemota_();
   return { version: VERSION_APP, remota: rem && rem.version || '', notas: rem && rem.notas || '', hay: !!(rem && rem.version && cmpVer_(rem.version, VERSION_APP) > 0),
-    errorRemota: rem && rem.error || (rem ? '' : 'sin respuesta de GitHub'),
+    errorRemota: rem && rem.error || (rem ? '' : 'sin respuesta de GitHub'), pendiente: !!(soloCache && rem && !rem.version && !rem.error),
     auto: getConfig_('auto_actualizar') !== 'no', ultima: String(getConfig_('ultima_actualizacion') || ''), error: String(getConfig_('error_actualizacion') || ''), repo: REPO };
 }
 function saveMov(json) {

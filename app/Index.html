@@ -251,13 +251,31 @@ function op(fn,...a){
   chain=p.catch(()=>{});return p;
 }
 function saveCfg(ren){return op('saveCfg',JSON.stringify({cot:S.cfg.cot,cuentas:S.cfg.cuentas,conceptos:S.cfg.conceptos,ren:ren||{}}))}
+let _lento=null;
 async function load(){
   if(pend)return;
+  clearTimeout(_lento);
+  if(!S.ready)_lento=setTimeout(()=>{if(!S.ready){document.getElementById('view').innerHTML=`<div class="card welcome"><h3 style="margin-top:0">Está tardando más de lo normal</h3>
+    <p class="mu sm">Puede ser la conexión o que Google esté pidiendo un permiso. Probá recargar. Si sigue igual, en Apps Script abrí “Ejecuciones” (menú de la izquierda) y mandame el error de <b>getData</b>.</p>
+    <button class="btn pri" onclick="location.reload()">Recargar</button></div>`}},25000);
   try{
     const o=JSON.parse(await call('getData'));
+    clearTimeout(_lento);
     if(pend)return;
-    S.cfg=o.cfg;S.movs=o.movs;S.sheet=o.sheet||'';S.notifs=o.notifs||{pend:[],rec:[],cuotas:[]};S.notifs.cuotas=S.notifs.cuotas||[];S.reglas=o.reglas||[];S.token=o.token||'';S.fijos=o.fijos||[];S.difs=o.difs||[];S.extras=o.extras||[];S.app=o.app||{};S.url=o.url||'';S.avisos=o.avisos||{};S.ready=true;S.err=null;invalidate();render();
-  }catch(e){S.err=(e&&e.message)||String(e);render()}
+    S.cfg=o.cfg;S.movs=o.movs;S.sheet=o.sheet||'';S.notifs=o.notifs||{pend:[],rec:[],cuotas:[]};S.notifs.cuotas=S.notifs.cuotas||[];S.reglas=o.reglas||[];S.token=o.token||'';S.fijos=o.fijos||[];S.difs=o.difs||[];S.extras=o.extras||[];S.app=o.app||{};S.url=o.url||'';S.avisos=o.avisos||{};
+    if(!load._extras){load._extras=true;cargarExtras()}S.ready=true;S.err=null;invalidate();render();
+  }catch(e){clearTimeout(_lento);S.err=(e&&e.message)||String(e);render()}
+}
+async function cargarExtras(){
+  try{
+    const r=JSON.parse(await call('extrasCarga'));
+    if(r.cot){S.cfg.cot=r.cot;S.cfg.cotFecha=r.cotFecha}S.cfg.cotOk=r.cotOk;
+    if(r.app)S.app=r.app;
+    if(r.receptor)S.avisos.receptor=r.receptor;
+    S.avisos.gmailEstado=r.gmailEstado;
+    invalidate();if(document.getElementById('modal').hidden)render();
+    if(r.mails)load();
+  }catch(e){/* no es grave: se reintenta la próxima vez */}
 }
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.ready&&document.getElementById('modal').hidden)load()});
 
