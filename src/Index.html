@@ -804,8 +804,10 @@ function cardNotif(n){
    <div class="seg" style="margin-bottom:10px">${[['G','Gasto'],['I','Ingreso'],['T','Transferencia']].map(([k,l])=>`<button type="button" data-k="${k}" class="${t===k?'on '+k:''}" onclick="ncTipo(${js(i)},'${k}')">${l}</button>`).join('')}</div>
    <div class="fld2"><div class="fld"><label>Importe</label><input type="text" inputmode="decimal" class="nc_m" value="${n.importe?String(n.importe).replace('.',','):''}"></div>
     <div class="fld"><label>Fecha</label><input type="date" class="nc_f" value="${h((n.fecha||hoy()).slice(0,10))}"></div></div>
-   <div class="fld"><label class="nc_cl">${t==='T'?'Desde':'Cuenta'}</label><select class="nc_c">${accO(cuenta,true)}</select></div>
-   <div class="fld nc_c2w"${t==='T'?'':' hidden'}><label>Hacia</label><select class="nc_c2">${accO('',true)}</select></div>
+   <div class="fld"><label class="nc_cl">${t==='T'?'Desde':'Cuenta'}</label><select class="nc_c" onchange="ncMon(${js(i)})">${accO(cuenta,true)}</select></div>
+   <div class="fld nc_c2w"${t==='T'?'':' hidden'}><label>Hacia</label><select class="nc_c2" onchange="ncMon(${js(i)})">${accO('',true)}</select></div>
+   <div class="fld nc_m2w" hidden><label class="nc_m2l">Importe recibido</label><input type="text" inputmode="decimal" class="nc_m2" placeholder="0,00">
+    <div class="xs mu nc_m2h" style="margin-top:4px"></div></div>
    <div class="fld nc_kw"${t==='T'?' hidden':''}><label>Concepto</label><select class="nc_k" data-tipo="${t}">${conO(t==='I'?'I':'G')}</select></div>
    <div class="fld2"><div class="fld"><label>Descripción</label><input type="text" class="nc_d" value="${h(n.comercio)}"></div>
     <div class="fld nc_nw"${t==='G'?'':' hidden'}><label>Cuotas</label><input type="number" class="nc_n" min="1" max="60" value="${n.cuotas||1}"></div></div>
@@ -822,7 +824,26 @@ function ncTipo(id,t){
   el.querySelector('.nc_cl').textContent=t==='T'?'Desde':'Cuenta';
   const k=el.querySelector('.nc_k');
   if(t!=='T'&&k.dataset.tipo!==t){const tmp=document.createElement('div');const n=S.notifs.pend.find(x=>x.id===id);tmp.innerHTML=cardNotif({...n,tipo:t,concepto:''});k.innerHTML=tmp.querySelector('.nc_k').innerHTML;k.dataset.tipo=t}
-  el.dataset.t=t;
+  el.dataset.t=t;ncMon(id);
+}
+/* Transferencia entre monedas (ej. pagar la tarjeta en dólares desde la caja en pesos) */
+function ncMon(id){
+  const el=document.getElementById('nc_'+id);if(!el)return;
+  const q=c=>el.querySelector(c),n=S.notifs.pend.find(x=>x.id===id)||{};
+  const t=el.dataset.t||(['G','I','T'].includes(n.tipo)?n.tipo:'G');
+  const c=q('.nc_c').value,c2=q('.nc_c2').value;
+  const dif=t==='T'&&c&&c2&&monOf(c)!==monOf(c2);
+  q('.nc_m2w').hidden=!dif;if(!dif){el.querySelector('.nc_m').closest('.fld').querySelector('label').textContent='Importe';return}
+  const m1=monOf(c),m2=monOf(c2);
+  q('.nc_m2l').textContent='Importe que entra en '+c2+' ('+sym(m2)+')';
+  el.querySelector('.nc_m').closest('.fld').querySelector('label').textContent='Importe que sale ('+sym(m1)+')';
+  // si el aviso vino en la moneda de destino, ese es el importe recibido; el que sale se calcula
+  const fi=v=>String(v).replace('.',','),mi=q('.nc_m'),mo=q('.nc_m2'),conv=(v,de)=>de==='USD'?r2(v*cot()):r2(v/cot());
+  if(!mo.value){
+    const v=Math.abs(parseNum(mi.value));
+    if(v>0){if(n.mon&&n.mon===m2&&n.mon!==m1){mo.value=fi(v);mi.value=fi(conv(v,m2))}else mo.value=fi(conv(v,m1))}
+  }
+  q('.nc_m2h').textContent='Sugerido con el dólar eBROU venta ($ '+NF.format(cot())+'). Corregilo con lo que debitó el banco.';
 }
 async function asignar(id){
   const el=document.getElementById('nc_'+id),n=S.notifs.pend.find(x=>x.id===id);
@@ -834,7 +855,7 @@ async function asignar(id){
   if(t==='T'&&(!c2||c2===c)){toast('Elegí la cuenta de destino');return}
   if(t!=='T'&&!k){toast('Elegí el concepto');return}
   const mov={id:'m'+id.slice(1),t,f,c,m:r2(m),ts:Date.now()};
-  if(t==='T'){mov.c2=c2;if(monOf(c)!==monOf(c2)){toast('Para transferencias entre monedas, cargala desde Movimientos');return}}else mov.k=k;
+  if(t==='T'){mov.c2=c2;if(monOf(c)!==monOf(c2)){const m2=Math.abs(parseNum(q('.nc_m2').value));if(!(m2>0)){toast('Ingresá el importe que entra en '+c2);return}mov.m2=r2(m2)}}else mov.k=k;
   if(d)mov.d=d;
   const reglas=[];
   if(t!=='T'&&q('.nc_rk').checked&&q('.nc_pk').value.trim())reglas.push({tipo:'Concepto',palabra:q('.nc_pk').value.trim(),valor:k});
