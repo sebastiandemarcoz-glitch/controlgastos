@@ -1,1 +1,1 @@
-{"version": "5.5.8", "notas": "Por clasificar: transferencias entre cuentas de distinta moneda (pagar la tarjeta en dólares desde la caja en pesos)."}
+{"version": "5.5.9", "notas": "Estados de cuenta: la tarjeta queda con el saldo del estado al cierre y suma solo lo posterior. Agenda de pagos con aviso en Inicio el día del vencimiento."}

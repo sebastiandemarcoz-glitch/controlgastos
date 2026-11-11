@@ -10,7 +10,7 @@
  *                  las notificaciones (exige la clave que muestra la app en Ajustes).
  */
 
-const VERSION_APP = '5.5.8';
+const VERSION_APP = '5.5.9';
 const REPO = 'sebastiandemarcoz-glitch/controlgastos';   // de acá se bajan las actualizaciones
 const RAW = 'https://raw.githubusercontent.com/' + REPO + '/main/app/';
 
@@ -214,7 +214,12 @@ function leerCfg_() {
     cfg.conceptos.push({ n: String(r[0]).trim(), tipo: /^ing/i.test(String(r[1])) ? 'I' : 'G', cat: String(r[2] || '').trim(), pres: num_(r[3]) || 0 });
   });
   cfg.preguntarCuotas = getConfig_('preguntar_cuotas') || 'tc';
+  cfg.anclas = jsonCfg_('anclas', {});
+  cfg.agenda = jsonCfg_('agenda', []);
   return cfg;
+}
+function jsonCfg_(k, def) {
+  try { const v = String(getConfig_(k) || ''); return v ? JSON.parse(v) : def; } catch (e) { return def; }
 }
 function getConfig_(k) {
   const r = body_('Config').filter(function (x) { return x[0] === k; })[0];

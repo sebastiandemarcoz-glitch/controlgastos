@@ -232,13 +232,17 @@ function toUYU(v,mon){return mon==='USD'?v*cot():v}
 function saldos(hasta){
   hasta=hasta||hoy();const r={};
   for(const c of S.cfg.cuentas)r[c.n]={s:+c.si||0,fut:0};
-  const add=(n,v,f)=>{const o=r[n];if(!o)return;if(f<=hasta)o.s+=v;else o.fut+=v};
+  const AN=S.cfg.anclas||{};
+  for(const n in AN){const a=AN[n];if(r[n]&&a&&a.f&&a.f<=hasta){r[n].s=+a.s||0;r[n].an=a.f}}
+  const add=(n,v,f)=>{const o=r[n];if(!o)return;if(f<=hasta){if(o.an&&f<=o.an)return;o.s+=v}else o.fut+=v};
   for(const x of S.movs){
     if(x.t==='T'){add(x.c,-x.m,x.f);add(x.c2,x.m2??x.m,x.f)}
     else add(x.c,x.t==='G'?-x.m:x.m,x.f);
   }
   return r;
 }
+function guardarAnclas(){return op('setConfig','anclas',JSON.stringify(S.cfg.anclas||{}))}
+function guardarAgenda(){return op('setConfig','agenda',JSON.stringify(S.cfg.agenda||[]))}
 function efecto(x,n){
   if(x.t==='T'){let v=0;if(x.c===n)v-=x.m;if(x.c2===n)v+=(x.m2??x.m);return v}
   return x.c===n?(x.t==='G'?-x.m:x.m):0;
@@ -361,7 +365,9 @@ function vInicio(){
   const ult=movs().filter(x=>x.f<=hy).slice(0,8);
   const np=S.notifs.pend.length+S.notifs.cuotas.length+S.difs.length;
   const pr=presResumen(mes);
-  return `${S.app&&S.app.hay?`<div class="card banner" onclick="go('ajustes')"><b>⬆️ Hay una versión nueva de la app (${h(S.app.remota)})</b><span>${S.app.auto?'Se instala sola esta noche ›':'Actualizar ›'}</span></div>`:''}${np?`<div class="card banner" onclick="go('clasificar')"><b>🔔 Tenés ${np} pendiente${np>1?'s':''} para revisar</b><span>Ver ›</span></div>`:''}
+  const AG=(S.cfg.agenda||[]).filter(x=>!x.pag).sort((a,b)=>a.f<b.f?-1:1);
+  const urg=AG.filter(x=>diasA(x.f)<=3);
+  return `${urg.map(x=>{const d=diasA(x.f);return `<div class="card banner" style="${d<0?'border-color:#d23c3c':''}" onclick="openPago(${js(x.id)})"><b>🗓 ${d<0?'Venció':d===0?'Vence hoy':d===1?'Vence mañana':'Vence el '+fFecha(x.f).slice(0,5)}: ${h(x.n)} · ${montoAg(x)}</b><span>Pagar ›</span></div>`}).join('')}${S.app&&S.app.hay?`<div class="card banner" onclick="go('ajustes')"><b>⬆️ Hay una versión nueva de la app (${h(S.app.remota)})</b><span>${S.app.auto?'Se instala sola esta noche ›':'Actualizar ›'}</span></div>`:''}${np?`<div class="card banner" onclick="go('clasificar')"><b>🔔 Tenés ${np} pendiente${np>1?'s':''} para revisar</b><span>Ver ›</span></div>`:''}
   ${pr.pres?`<div class="card" style="cursor:pointer" onclick="go('presupuesto')"><h2>Presupuesto del mes<span class="num" style="text-transform:none;font-size:20px">${pctTxt(pr.gas,pr.pres)}</span></h2>
     <div class="sm">Gastado <b class="num">${fmt0(pr.gas)}</b> de <b class="num">${fmt0(pr.pres)}</b> · disponible <b class="num ${pr.pres-pr.gas<0?'neg':''}">${fmt0(pr.pres-pr.gas)}</b></div></div>`:''}
   <div class="grid2">
@@ -389,6 +395,7 @@ function vInicio(){
     ${top.length?top.map(([k,v])=>{const p=pc[k]||0;return `<div class="kv sm" style="padding:6px 0;cursor:pointer;border-bottom:1px solid var(--ln)" onclick="V.inf.per='${mes}';V.inf.tipo='G';V.inf.by='k';V.inf.cat=${js(k)};go('informes')"><span>${h(k)}<br><span class="xs mu num">${fmt0(v)}${p?' de '+fmt0(p):' · sin presupuesto'}</span></span><b class="num" style="font-size:17px">${p?`<span class="tx-${sem(v/p*100)}">${Math.round(v/p*100)}%</span>`:'<span class="mu">—</span>'}</b></div>`}).join(''):'<div class="empty">Todavía no hay gastos este mes</div>'}
   </div>
   </div>
+  ${vAgenda(AG)}
   <div class="card" style="margin-top:12px"><h2>Últimos movimientos <button class="btn sm" onclick="go('movimientos')">Ver todos</button></h2>
     ${ult.length?ult.map(x=>rowHTML(x,null,true)).join(''):'<div class="empty">Tocá + para cargar tu primer movimiento</div>'}
   </div>`;
@@ -410,6 +417,74 @@ function rowHTML(x,an,showDate){
    <div class="mid"><div class="t1">${h(titulo(x))}${fut}</div><div class="t2">${sub.join(' · ')}</div></div>
    <div class="num ${cls}">${x.t==='T'&&!an?fmt(v,mon):fmtS(v,mon)}</div></div>`;
 }
+
+/* ---------- Agenda de pagos ---------- */
+function diasA(f){return Math.round((new Date(f+'T12:00')-new Date(hoy()+'T12:00'))/864e5)}
+function montoAg(x){return [x.m?fmt(x.m,'UYU'):'',x.mu?fmt(x.mu,'USD'):''].filter(Boolean).join(' + ')||'—'}
+function pagadoDesde(x){ // pagos ya registrados hacia la tarjeta después del cierre
+  if(!x.cierre)return 0;let v=0;
+  for(const m of S.movs)if(m.t==='T'&&m.f>x.cierre&&(m.c2===x.c||(x.c2&&m.c2===x.c2)))v+=toUYU(m.m2??m.m,monOf(m.c2));
+  return v}
+function vAgenda(AG){
+  return `<div class="card" style="margin-top:12px"><h2>Agenda de pagos <button class="btn sm" onclick="openAgenda()">+ Agregar</button></h2>
+   ${AG.length?AG.map(x=>{const d=diasA(x.f),pd=pagadoDesde(x);return `<div class="row" onclick="openPago(${js(x.id)})"><div class="ico T">🗓</div><div class="mid"><div class="t1">${h(x.n)}</div>
+     <div class="t2"><span class="${d<0?'tx-r':d<=3?'tx-a':''}">${d<0?'venció el '+fFecha(x.f):d===0?'vence hoy':d===1?'vence mañana':'vence el '+fFecha(x.f)+' (en '+d+' días)'}</span>${pd>0.5?' · ya registraste pagos por '+fmt0(pd):''}</div></div>
+     <div class="num">${montoAg(x)}</div></div>`}).join(''):'<div class="empty">No hay pagos pendientes. Al cargar el estado de una tarjeta, su pago aparece acá con la fecha de vencimiento.</div>'}
+  </div>`}
+function openAgenda(id){
+  const x=id?(S.cfg.agenda||[]).find(a=>a.id===id):{n:'',f:hoy(),m:'',mu:'',c:''};
+  const accO=S.cfg.cuentas.filter(c=>!c.arch).map(c=>`<option value="${h(c.n)}"${c.n===x.c?' selected':''}>${h(c.n)}</option>`).join('');
+  modal(`<h3>${id?'Editar pago':'Nuevo pago a recordar'}</h3>
+   <div class="fld"><label>Qué hay que pagar</label><input type="text" id="ag_n" value="${h(x.n)}" placeholder="Ej.: Patente, Contribución"></div>
+   <div class="fld2"><div class="fld"><label>Vence</label><input type="date" id="ag_f" value="${h(x.f)}"></div>
+    <div class="fld"><label>A qué cuenta (opcional)</label><select id="ag_c"><option value="">— ninguna (es un gasto) —</option>${accO}</select></div></div>
+   <div class="fld2"><div class="fld"><label>Importe $</label><input type="text" inputmode="decimal" id="ag_m" value="${x.m?String(x.m).replace('.',','):''}"></div>
+    <div class="fld"><label>Importe U$S</label><input type="text" inputmode="decimal" id="ag_mu" value="${x.mu?String(x.mu).replace('.',','):''}"></div></div>
+   <div class="btns" style="justify-content:space-between">${id?`<button class="btn dan" onclick="borrarAgenda(${js(id)})">Borrar</button>`:'<span></span>'}<span class="btns"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn pri" onclick="guardarItemAgenda(${js(id||'')})">Guardar</button></span></div>`)}
+function guardarItemAgenda(id){
+  const v=i=>document.getElementById(i).value,G=S.cfg.agenda||(S.cfg.agenda=[]);
+  const n=v('ag_n').trim(),f=v('ag_f');if(!n||!f){toast('Completá qué y cuándo');return}
+  const m=Math.abs(parseNum(v('ag_m'))||0),mu=Math.abs(parseNum(v('ag_mu'))||0);
+  const it={...(G.find(x=>x.id===id)||{id:'ag'+uid(),pag:false}),n,f,m:r2(m),mu:r2(mu),c:v('ag_c')};
+  const i=G.findIndex(x=>x.id===it.id);if(i>-1)G[i]=it;else G.push(it);
+  guardarAgenda().catch(()=>{});closeModal();render();toast('Guardado')}
+function borrarAgenda(id){S.cfg.agenda=(S.cfg.agenda||[]).filter(x=>x.id!==id);guardarAgenda().catch(()=>{});closeModal();render();toast('Borrado')}
+function openPago(id){
+  const x=(S.cfg.agenda||[]).find(a=>a.id===id);if(!x)return;
+  const origen=S.cfg.cuentas.filter(c=>!c.arch&&!esTC(c.n));
+  const def=lsGet('cg_pago_desde')||(origen.find(c=>c.mon==='UYU')||{}).n||'';
+  const oO=sel=>origen.map(c=>`<option value="${h(c.n)}"${c.n===sel?' selected':''}>${h(c.n)} (${sym(c.mon)})</option>`).join('');
+  const pd=pagadoDesde(x),esTar=!!x.c;
+  modal(`<h3>Pagar: ${h(x.n)}</h3>
+   <div class="kv"><span>Vence</span><b>${fFecha(x.f)}</b></div>
+   <div class="kv"><span>A pagar</span><b class="num">${montoAg(x)}</b></div>
+   ${pd>0.5?`<p class="sm" style="background:#fff7e0;padding:8px 10px;border-radius:8px">Ya hay pagos registrados a esta tarjeta después del cierre por <b>${fmt0(pd)}</b>. Si ya cubren este estado, tocá “Ya lo registré”.</p>`:''}
+   ${esTar?`<div class="fld2"><div class="fld"><label>Pagás desde</label><select id="pg_c" onchange="pgMon()">${oO(def)}</select></div><div class="fld"><label>Fecha</label><input type="date" id="pg_f" value="${hoy()}"></div></div>
+   ${x.m?`<div class="fld"><label>Pesos a ${h(x.c)}</label><input type="text" inputmode="decimal" id="pg_m" value="${String(x.m).replace('.',',')}"></div>`:''}
+   ${x.mu&&x.c2?`<div class="fld"><label>Dólares a ${h(x.c2)}: <b>${fmt(x.mu,'USD')}</b> · debitado de tu cuenta <span id="pg_dl"></span></label><input type="text" inputmode="decimal" id="pg_md"><div class="xs mu" id="pg_dh" style="margin-top:4px"></div></div>`:''}
+   <p class="xs mu">Se registra como transferencia desde tu cuenta a la tarjeta (baja tu cuenta y queda acreditado en la tarjeta).</p>`:`<p class="xs mu">No tiene cuenta asociada: “Ya lo registré” solo lo marca como pagado. Si querés, cargá el gasto desde +.</p>`}
+   <div class="btns" style="justify-content:space-between"><button class="btn" onclick="openAgenda(${js(id)})">Editar</button>
+    <span class="btns"><button class="btn" onclick="marcarPagado(${js(id)})">Ya lo registré</button>${esTar?`<button class="btn pri" onclick="registrarPago(${js(id)})">Registrar pago</button>`:''}</span></div>`);
+  PG=x;pgMon()}
+let PG=null;
+function pgMon(){const x=PG,el=document.getElementById('pg_md');if(!x||!el)return;const c=document.getElementById('pg_c').value,mon=monOf(c);
+  document.getElementById('pg_dl').textContent='('+sym(mon)+')';
+  el.value=String(mon==='USD'?x.mu:r2(x.mu*cot())).replace('.',',');
+  document.getElementById('pg_dh').textContent=mon==='USD'?'':'Calculado con el dólar eBROU venta ($ '+NF.format(cot())+'). Corregilo con lo que debitó el banco.'}
+function marcarPagado(id){const x=(S.cfg.agenda||[]).find(a=>a.id===id);if(!x)return;x.pag=true;x.pagF=hoy();guardarAgenda().catch(()=>{});closeModal();render();toast('Marcado como pagado')}
+function registrarPago(id){
+  const x=(S.cfg.agenda||[]).find(a=>a.id===id);if(!x)return;
+  const c=document.getElementById('pg_c').value,f=document.getElementById('pg_f').value||hoy();
+  if(!c){toast('Elegí desde qué cuenta pagás');return}
+  const nv=i=>{const e=document.getElementById(i);return e?Math.abs(parseNum(e.value)||0):0};
+  const ms=[];const mp=nv('pg_m'),md=nv('pg_md');
+  if(mp>0){const t={id:uid(),t:'T',f,c,c2:x.c,m:r2(mp),d:'Pago '+x.n,ts:Date.now()};if(monOf(c)!==monOf(x.c)){t.m=r2(mp/cot());t.m2=r2(mp)}ms.push(t)}
+  if(x.mu&&x.c2&&md>0){const t={id:uid(),t:'T',f,c,c2:x.c2,m:r2(md),d:'Pago '+x.n+' (dólares)',ts:Date.now()+1};if(monOf(c)!==monOf(x.c2))t.m2=r2(x.mu);ms.push(t)}
+  if(!ms.length){toast('Ingresá el importe');return}
+  lsSet('cg_pago_desde',c);
+  S.movs.push(...ms);op('importMovs',JSON.stringify(ms)).catch(()=>{});
+  x.pag=true;x.pagF=f;guardarAgenda().catch(()=>{});
+  invalidate();closeModal();render();toast('Pago registrado')}
 
 /* ---------- Movimientos ---------- */
 function filtrar(f,per){V.f={c:'',k:'',t:'',q:'',e:'',cat:'',...f};V.per=per??V.per;V.show=300;go('movimientos')}
@@ -553,14 +628,16 @@ function fijarSaldos(){
    <div class="btns" style="justify-content:flex-end"><button class="btn" onclick="closeModal()">Cancelar</button><button class="btn pri" onclick="guardarSaldos()">Guardar saldos</button></div>`);
 }
 function guardarSaldos(){
-  const sal=saldos();let n=0;
+  const sal=saldos();let n=0,anc=false;
   document.querySelectorAll('input[data-acc]').forEach(i=>{
     if(!i.value.trim())return;
     let v=parseNum(i.value);if(isNaN(v))return;
     if(i.dataset.tc==='1')v=-Math.abs(v);
-    const c=acc(i.dataset.acc);c.si=r2((+c.si||0)+(v-sal[c.n].s));n++;
+    const c=acc(i.dataset.acc),A=(S.cfg.anclas||{})[c.n];
+    if(A&&A.f<=hoy()){A.s=r2((+A.s||0)+(v-sal[c.n].s));anc=true}else c.si=r2((+c.si||0)+(v-sal[c.n].s));n++;
   });
   if(!n){closeModal();return}
+  if(anc)guardarAnclas().catch(()=>{});
   invalidate();saveCfg();closeModal();render();toast(`Saldos fijados en ${n} cuenta${n>1?'s':''}`);
 }
 
@@ -1261,7 +1338,18 @@ function parseEstado(lines,fname){
   const recordada=lsGet('cg_ec_'+fmtId);if(!cuenta&&recordada&&acc(recordada))cuenta=recordada;
   // período: del día siguiente al cierre anterior hasta el cierre
   const desde=cierre?addDias(addMeses(cierre,-1),1):(fs[0]||'');
-  return {items,desde,hasta:cierre||fs[fs.length-1]||'',cuenta,fname,fmt:fmtId};
+  // saldo a pagar (contado) y vencimiento
+  const saldo={UYU:null,USD:null};
+  for(const l of lines){const lin=l.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();
+    if(!/saldo contado|total a pagar/i.test(lin))continue;
+    const nums=(lin.match(/-?\d{1,3}(?:[.,]\d{3})*[.,]\d{2}\b/g)||[]).map(x=>Math.abs(parseNum(x)));
+    if(nums.length){saldo.UYU=r2(nums[0]);saldo.USD=nums.length>1?r2(nums[nums.length-1]):0;break}}
+  let venc='';
+  const mv=txt.match(/vencimiento(?: actual)?:?\s*(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/i);
+  const aF=m=>{let y=+m[3];if(y<100)y+=2000;return y+'-'+p2(m[2])+'-'+p2(m[1])};
+  if(mv)venc=aF(mv);
+  else if(cierre){const all=[...txt.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/g)].map(aF).filter(f=>f>cierre&&dias(f,cierre)<=40).sort();venc=all[0]||''}
+  return {items,desde,hasta:cierre||fs[fs.length-1]||'',cuenta,fname,fmt:fmtId,saldo,venc,cierre:cierre||''};
 }
 function renderEC(){
   const E=EC;
@@ -1271,6 +1359,11 @@ function renderEC(){
   modal(`<h3>Estado de cuenta: ${h(E.fname)}</h3>
    <div class="fld"><label>Tarjeta (cuenta en pesos; los dólares van a su cuenta “hermana” en dólares)</label><select id="ec_c" onchange="EC.cuenta=this.value"><option value="">— elegir —</option>${accO}</select></div>
    <div class="fld2"><div class="fld"><label>Desde</label><input type="date" id="ec_d" value="${E.desde}" onchange="EC.desde=this.value"></div><div class="fld"><label>Hasta</label><input type="date" id="ec_h" value="${E.hasta}" onchange="EC.hasta=this.value"></div></div>
+   <div class="fld3" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+    <div class="fld"><label>Saldo a pagar $</label><input type="text" inputmode="decimal" id="ec_su" value="${E.saldo&&E.saldo.UYU!=null?String(E.saldo.UYU).replace('.',','):''}" placeholder="0,00"></div>
+    <div class="fld"><label>Saldo a pagar U$S</label><input type="text" inputmode="decimal" id="ec_sd" value="${E.saldo&&E.saldo.USD!=null?String(E.saldo.USD).replace('.',','):''}" placeholder="0,00"></div>
+    <div class="fld"><label>Vencimiento</label><input type="date" id="ec_v" value="${h(E.venc||'')}"></div></div>
+   <p class="xs mu" style="margin-top:-4px">Con el saldo a pagar, la tarjeta queda con esa deuda al día “Hasta” (cierre) y desde ahí suma solo lo posterior. El pago va a la agenda con recordatorio el día del vencimiento.</p>
    <div class="sm" style="margin-bottom:6px"><b>${E.items.length}</b> líneas leídas · se van a comparar <b>${usados.length}</b> · Total $ <span class="num">${NF.format(tot('UYU'))}</span> · U$S <span class="num">${NF.format(tot('USD'))}</span></div>
    <div style="max-height:40vh;overflow:auto;border:1px solid var(--ln);border-radius:10px"><table class="pv"><tr><th></th><th>Fecha</th><th>Descripción</th><th>Cuota</th><th style="text-align:right">Importe</th></tr>
    ${E.items.map((x,i)=>`<tr><td><input type="checkbox"${x.usar?' checked':''} onchange="EC.items[${i}].usar=this.checked"></td><td>${x.f.slice(8)}/${x.f.slice(5,7)}</td><td title="${h(x.d)}">${h(x.d)}${x.pago?' <span class="chip">pago</span>':''}${x.tj&&E.items.some(y=>y.tj&&y.tj!==x.tj)?' <span class="chip" style="background:var(--bg);color:var(--mu)">'+h(x.tj.split(' ')[0])+'</span>':''}</td><td>${h(x.q)}</td><td class="num" style="text-align:right">${sym(x.mon)} ${NF.format(x.m)}</td></tr>`).join('')}</table></div>
@@ -1288,6 +1381,8 @@ function dias(a,b){return Math.abs((new Date(a+'T12:00')-new Date(b+'T12:00'))/8
 function conciliar(){
   const E=EC;E.cuenta=document.getElementById('ec_c').value;if(E.cuenta)lsSet('cg_ec_'+E.fmt,E.cuenta);E.desde=document.getElementById('ec_d').value;E.hasta=document.getElementById('ec_h').value;
   if(!E.cuenta){toast('Elegí la tarjeta');return}
+  const vv=id=>{const t=(document.getElementById(id)||{}).value||'';return t.trim()===''?null:Math.abs(parseNum(t))};
+  E.sU=vv('ec_su');E.sD=vv('ec_sd');E.venc=(document.getElementById('ec_v')||{}).value||'';
   const A=acc(E.cuenta),B=(()=>{const base=n=>palabrasC(n).replace(/ (pesos|dolares|uyu|usd|u s) /g,' ').trim();return S.cfg.cuentas.find(c=>c.mon==='USD'&&base(c.n)===base(A.n))})();
   const ec='ec'+hash(E.cuenta+'|'+E.desde+'|'+E.hasta);
   const lin=E.items.filter(x=>x.usar).map((x,i)=>({...x,i,acct:x.mon==='USD'?(B?B.n:A.n):A.n}));
@@ -1314,18 +1409,39 @@ function conciliar(){
   for(const l of lin)if(!l.ok)difs.push({tipo:'falta_app',f:l.f,d:l.d,m:l.m,mon:l.mon,q:l.q,c:l.acct});
   for(const c of cands)if(!usado.has(c)&&c.x.f>=E.desde&&c.x.f<=E.hasta&&!c.x.cc&&!(/^z/.test(c.x.id)&&c.x.f.endsWith('-01')))difs.push({tipo:'falta_estado',f:c.x.f,d:c.x.d||c.x.k||titulo(c.x),m:c.v,mon:monOf(c.a),mov:c.x.id,q:c.x.q||'',c:c.a});
   const n={falta_app:0,falta_estado:0,importe:0};difs.forEach(d=>n[d.tipo]++);
-  E.res={ec,match,difs};
+  E.res={ec,match,difs,A:A.n,B:B?B.n:''};
+  const AN=S.cfg.anclas||{},nuevo=E.sU!=null&&E.hasta&&(!AN[A.n]||AN[A.n].f<=E.hasta);
   modal(`<h3>Resultado de la conciliación</h3>
    <div class="kv"><span>Coinciden</span><b class="pos">${match.length}</b></div>
    <div class="kv"><span>En el estado y no en la app</span><b>${n.falta_app}</b></div>
    <div class="kv"><span>En la app y no en el estado</span><b>${n.falta_estado}</b></div>
    <div class="kv"><span>Importe distinto</span><b>${n.importe}</b></div>
    <p class="sm mu">Las coincidencias quedan marcadas como conciliadas. Las diferencias van a <b>Por clasificar</b> para que apruebes o rechaces cada una.</p>
+   ${E.sU!=null?(nuevo?`<p class="sm">Al ${fFecha(E.hasta)} la tarjeta queda con una deuda de <b class="num">${fmt(E.sU,'UYU')}</b>${B&&E.sD?` y <b class="num">${fmt(E.sD,'USD')}</b>`:''}. Desde ese día suma solo lo posterior, así que aprobar diferencias de este estado no cambia el saldo.${E.venc&&E.venc>=hoy()&&(E.sU>0||E.sD>0)?` El pago queda en la agenda para el <b>${fFecha(E.venc)}</b>.`:''}</p>`:`<p class="sm mu">Ya hay un estado más nuevo cargado para esta tarjeta: este no cambia el saldo ni la agenda.</p>`):''}
    <div class="btns" style="justify-content:flex-end"><button class="btn" onclick="renderEC()">‹ Volver</button><button class="btn pri" id="btnEC" onclick="guardarEC()">Guardar</button></div>`);
+}
+function fFecha(f){return f?f.slice(8,10)+'/'+f.slice(5,7)+'/'+f.slice(0,4):''}
+function aplicarCierre(E){
+  const R=E.res,AN=S.cfg.anclas||(S.cfg.anclas={});
+  if(E.sU==null||!E.hasta)return;
+  if(AN[R.A]&&AN[R.A].f>E.hasta)return;      // estado viejo: no toca nada
+  AN[R.A]={f:E.hasta,s:-r2(E.sU)};
+  if(R.B&&E.sD!=null)AN[R.B]={f:E.hasta,s:-r2(E.sD)};
+  guardarAnclas().catch(()=>{});
+  if(E.venc&&E.venc>=hoy()&&(E.sU>0||(R.B&&E.sD>0))){
+    const G=S.cfg.agenda||(S.cfg.agenda=[]);
+    const it={id:R.ec,n:'Tarjeta '+R.A.replace(/^tc\s*-\s*/i,'').replace(/\s*pesos$/i,''),f:E.venc,m:r2(E.sU||0),mu:R.B?r2(E.sD||0):0,c:R.A,c2:R.B||'',cierre:E.hasta,pag:false};
+    const i=G.findIndex(x=>x.id===it.id);if(i>-1){it.pag=G[i].pag;it.pagF=G[i].pagF;G[i]=it}else G.push(it);
+    // los estados anteriores de la misma tarjeta que sigan pendientes quedan reemplazados
+    G.forEach(x=>{if(x!==it&&x.c===it.c&&!x.pag&&x.cierre&&x.cierre<it.cierre){x.pag=true;x.pagF='reemplazado'}});
+    guardarAgenda().catch(()=>{});
+  }
+  invalidate();
 }
 function addDias(f,n){const d=new Date(f+'T12:00');d.setDate(d.getDate()+n);return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())}
 async function guardarEC(){
   const {ec,match,difs}=EC.res;document.getElementById('btnEC').disabled=true;
+  aplicarCierre(EC);
   S.movs.forEach(x=>{if(match.includes(x.id))x.cc=ec});
   S.difs=S.difs.filter(d=>d.ec!==ec).concat(difs.map(d=>({...d,id:'tmp'+uid(),ec})));
   closeModal();go('clasificar');
